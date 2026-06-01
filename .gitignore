@@ -1,5 +1,6 @@
 # Local config with real credentials — never commit this
 mailer.local.php
+db.local.php
 
 # Environment / secrets
 .env
@@ -18,3 +19,4 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+db.local.php

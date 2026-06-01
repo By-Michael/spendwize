@@ -10,10 +10,18 @@ use PHPMailer\PHPMailer\PHPMailer;
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-const SW_DB_HOST = '127.0.0.1';
-const SW_DB_USER = 'root';
-const SW_DB_PASS = '';
-const SW_DB_NAME = 'spendwise_app';
+$_db = file_exists(__DIR__ . '/db.local.php')
+    ? require __DIR__ . '/db.local.php'
+    : ['host' => 'sql308.infinityfree.com',
+       'user' => 'if0_42058918',
+       'pass' => 'oakgSUIZPXsRaU',
+       'name' => 'if0_42058918_spendwise_app'];
+
+define('SW_DB_HOST', $_db['host']);
+define('SW_DB_USER', $_db['user']);
+define('SW_DB_PASS', $_db['pass']);
+define('SW_DB_NAME', $_db['name']);
+unset($_db);
 const SW_SESSION_KEY = 'spendwise_user';
 const SW_RESET_KEY = 'spendwise_verified_resets';
 const SW_OTP_EXPIRES_IN = 300;
