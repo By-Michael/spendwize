@@ -35,10 +35,26 @@ function appLogo(height,extraStyle={}){
   img.style.height=height;
   img.style.width='auto';
   img.style.maxWidth='100%';
-  img.style.objectFit='contain';
+  img.style.objectFit='cover';
   img.style.display='block';
   Object.assign(img.style,extraStyle);
   return img;
+}
+function appBrand(opts={}){
+  const height=opts.height||'2rem';
+  const showName=opts.showName!==false;
+  const compact=!!opts.compact;
+  const wrap=el('a',{
+    href:'#',
+    cls:'app-brand'+(compact?' app-brand--compact':'')+(opts.cls?' '+opts.cls:''),
+    style:{flexShrink:0,textDecoration:'none'},
+    onclick:e=>{e.preventDefault();if(typeof opts.onClick==='function')opts.onClick();else navigate('dashboard')}
+  });
+  const mark=el('div',{cls:'app-brand__mark'});
+  mark.appendChild(appLogo(height));
+  wrap.appendChild(mark);
+  if(showName)wrap.appendChild(el('span',{cls:'app-brand__name'},'SpendWise'));
+  return wrap;
 }
 function generateId(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2,9)}
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
@@ -451,8 +467,7 @@ function renderTopbar(){
   // Mobile menu btn
   const menuBtn=el('button',{cls:'icon-btn',style:{display:'none'},id:'menu-btn'});menuBtn.appendChild(ic('menu',20));menuBtn.addEventListener('click',openMobileMenu);
   // Logo
-  const logo=el('a',{href:'#',cls:'app-logo app-logo--compact',style:{flexShrink:0,textDecoration:'none'},onclick:e=>{e.preventDefault();navigate('dashboard')}});
-  logo.appendChild(appLogo('2rem'));
+  const logo=appBrand({height:'2rem',compact:true});
   // Search
   const srch=el('div',{style:{flex:1,maxWidth:'28rem',margin:'0 auto'}});
   const srchWrap=el('div',{cls:'relative'});
@@ -546,8 +561,8 @@ function renderSidebar(){
 
 function renderMobileDrawer(){
   const d=document.getElementById('mobile-drawer');if(!d)return;d.innerHTML='';
-  const mLogo=el('div',{style:{padding:'.75rem 1rem .25rem',textAlign:'center'}});
-  mLogo.appendChild(appLogo('2.5rem',{margin:'0 auto'}));
+  const mLogo=el('div',{cls:'mobile-drawer-brand'});
+  mLogo.appendChild(appBrand({height:'2.5rem'}));
   d.appendChild(mLogo);
   const addBtn=el('button',{cls:'btn-primary',style:{margin:'.75rem',width:'calc(100% - 1.5rem)',justifyContent:'center'}});
   addBtn.append(ic('plus-circle',16),' Add Expense');
