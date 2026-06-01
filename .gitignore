@@ -20,3 +20,8 @@ Thumbs.db
 *.swp
 *.swo
 db.local.php
+
+# i18n build artifacts
+xlsx_extract/
+translations.zip
+excel_preview.txt

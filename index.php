@@ -11,9 +11,15 @@ $bootstrapJson = json_encode(
 
 $scriptPath = __DIR__ . '/script.js';
 $stylePath = __DIR__ . '/style.css';
+$logoPath = __DIR__ . '/assets/spendwise-logo.png';
+$i18nAmPath = __DIR__ . '/i18n/am.js';
+$i18nExtraPath = __DIR__ . '/i18n/extra.js';
 $assetVersion = (string) max(
     file_exists($scriptPath) ? (int) filemtime($scriptPath) : 0,
     file_exists($stylePath) ? (int) filemtime($stylePath) : 0,
+    file_exists($logoPath) ? (int) filemtime($logoPath) : 0,
+    file_exists($i18nAmPath) ? (int) filemtime($i18nAmPath) : 0,
+    file_exists($i18nExtraPath) ? (int) filemtime($i18nExtraPath) : 0,
     time()
 );
 
@@ -27,6 +33,7 @@ header('Expires: 0');
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SpendWise</title>
+<link rel="icon" type="image/png" href="assets/spendwise-logo.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/lucide@0.383.0/dist/umd/lucide.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -40,6 +47,8 @@ header('Expires: 0');
 window.__SPENDWISE_BOOT__ = <?php echo $bootstrapJson ?: '{"user":null,"state":null}'; ?>;
 window.__SPENDWISE_BUILD__ = <?php echo json_encode($assetVersion); ?>;
 </script>
+<script src="i18n/am.js?v=<?php echo htmlspecialchars($assetVersion, ENT_QUOTES, 'UTF-8'); ?>" charset="UTF-8"></script>
+<script src="i18n/extra.js?v=<?php echo htmlspecialchars($assetVersion, ENT_QUOTES, 'UTF-8'); ?>" charset="UTF-8"></script>
 <script src="script.js?v=<?php echo htmlspecialchars($assetVersion, ENT_QUOTES, 'UTF-8'); ?>" charset="UTF-8"></script>
 </body>
 </html>
