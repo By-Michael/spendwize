@@ -1,6 +1,7 @@
 ﻿*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{overflow-x:hidden;scroll-behavior:smooth}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;min-height:100vh;transition:background .2s,color .2s}
+html{transition:background-color .35s ease,color .35s ease}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;min-height:100vh;transition:background-color .35s ease,color .35s ease}
 html.dark body{background:#0f172a;color:#f1f5f9}
 input,select,button,textarea{font-family:inherit}
 button{cursor:pointer;border:none;background:none}
@@ -145,12 +146,12 @@ html.dark .progress-bar{background:#334155}
 
 /* App Layout */
 #app-root{min-height:100vh}
-#topbar{position:fixed;top:0;left:0;right:0;height:3.5rem;background:#fff;border-bottom:1px solid #f1f5f9;z-index:40;display:flex;align-items:center;padding:0 1rem;gap:.75rem}
+#topbar{position:fixed;top:0;left:0;right:0;height:3.5rem;background:#fff;border-bottom:1px solid #f1f5f9;z-index:40;display:flex;align-items:center;padding:0 1rem;gap:.75rem;transition:background-color .35s ease,border-color .35s ease,color .35s ease}
 html.dark #topbar{background:#0f172a;border-color:#1e293b}
-#sidebar{position:fixed;top:3.5rem;left:0;bottom:0;width:14rem;background:#fff;border-right:1px solid #f1f5f9;z-index:30;display:flex;flex-direction:column;transition:width .25s}
+#sidebar{position:fixed;top:3.5rem;left:0;bottom:0;width:14rem;background:#fff;border-right:1px solid #f1f5f9;z-index:30;display:flex;flex-direction:column;transition:width .25s ease,background-color .35s ease,border-color .35s ease}
 html.dark #sidebar{background:#0f172a;border-color:#1e293b}
 #sidebar.collapsed{width:3.75rem}
-#content{min-height:100vh;padding-top:3.5rem;margin-left:14rem;transition:margin-left .25s;overflow-x:hidden}
+#content{min-height:100vh;padding-top:3.5rem;margin-left:14rem;transition:margin-left .25s ease,background-color .35s ease,color .35s ease;overflow-x:hidden}
 #content.collapsed{margin-left:3.75rem}
 #page{max-width:72rem;margin:0 auto;padding:1.25rem;padding-bottom:2rem}
 #bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #f1f5f9;display:none;height:4rem;z-index:30;align-items:center}
@@ -171,6 +172,12 @@ html.dark .nav-item.active{background:rgba(13,148,136,.15);color:#2dd4bf}
 #sidebar.collapsed .nav-label,.sidebar-section-title{display:none}
 #sidebar.collapsed .nav-label{display:none}
 
+.sidebar-toggle-row{display:flex;align-items:center;justify-content:flex-start;padding:.625rem .75rem;border-bottom:1px solid #f1f5f9}
+html.dark .sidebar-toggle-row{border-color:#1e293b}
+#sidebar.collapsed .sidebar-toggle-row{justify-content:center;padding:.625rem .5rem}
+.sidebar-toggle-btn{width:2.25rem;height:2.25rem;border-radius:.5rem;flex-shrink:0}
+.sidebar-toggle-btn svg{stroke-width:1.75}
+
 /* Icon btn */
 .icon-btn{padding:.375rem;border-radius:.5rem;transition:all .15s;color:#94a3b8;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;background:none}
 .icon-btn:hover{background:#f1f5f9;color:#0d9488}
@@ -181,7 +188,7 @@ html.dark .icon-btn.danger:hover{background:rgba(185,28,28,.15);color:#fca5a5}
 /* Modal */
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(2px);z-index:50;display:flex;align-items:flex-end;justify-content:center}
 .modal-backdrop.center{align-items:center;padding:1rem}
-.modal-box{background:#fff;width:100%;max-width:30rem;border-radius:1rem 1rem 0 0;max-height:92vh;overflow-y:auto;animation:slideUp .2s ease-out}
+.modal-box{background:#fff;width:100%;max-width:30rem;border-radius:1rem 1rem 0 0;max-height:92vh;overflow-y:auto;animation:slideUp .2s ease-out;transition:background-color .35s ease,color .35s ease}
 .modal-backdrop.center .modal-box{border-radius:1rem;animation:scaleIn .15s ease-out}
 html.dark .modal-box{background:#1e293b}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:1.25rem;border-bottom:1px solid #f1f5f9;position:sticky;top:0;background:#fff;z-index:1}
