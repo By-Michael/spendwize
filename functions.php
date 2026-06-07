@@ -550,6 +550,55 @@ function sw_send_password_reset_email(string $recipientName, string $recipientEm
     }
 }
 
+function sw_send_notification_email(string $recipientName, string $recipientEmail, string $subject, string $htmlBody, ?string $textBody = null): void
+{
+    $settings = sw_mailer_settings();
+    $caBundle = sw_ca_bundle_path();
+
+    $displayName = trim($recipientName) !== '' ? trim($recipientName) : 'there';
+
+    $mail = new PHPMailer(true);
+
+    try {
+        $mail->isSMTP();
+        $mail->Host = $settings['host'];
+        $mail->Port = $settings['port'];
+        $mail->SMTPAuth = true;
+        $mail->Username = $settings['username'];
+        $mail->Password = $settings['password'];
+        $mail->Timeout = $settings['timeout'];
+        $mail->CharSet = 'UTF-8';
+
+        if (in_array($settings['secure'], ['ssl', 'smtps'], true)) {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } else {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        }
+
+        if ($caBundle !== null) {
+            $mail->SMTPOptions = [
+                'ssl' => [
+                    'verify_peer' => true,
+                    'verify_peer_name' => true,
+                    'allow_self_signed' => false,
+                    'cafile' => $caBundle,
+                ],
+            ];
+        }
+
+        $mail->setFrom($settings['from_email'], $settings['from_name']);
+        $mail->addReplyTo($settings['from_email'], $settings['from_name']);
+        $mail->addAddress($recipientEmail, $recipientName);
+        $mail->Subject = $subject;
+        $mail->isHTML(true);
+        $mail->Body = $htmlBody;
+        $mail->AltBody = $textBody ?? strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlBody));
+        $mail->send();
+    } catch (MailerException $e) {
+        throw new RuntimeException('Could not send notification email. Check your SMTP credentials and mail access.');
+    }
+}
+
 function sw_http_get(string $url): string
 {
     $host = (string) parse_url($url, PHP_URL_HOST);
