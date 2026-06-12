@@ -895,7 +895,13 @@ function renderLogin(){
 // â•â•â•â•â•â• PAGE RENDERER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderPage(){
   const root=document.getElementById('page');if(!root)return;
-  root.className='anim-fade';root.innerHTML='';
+  // Restart the fade-in animation on every navigation (re-setting the same
+  // class name is a no-op in browsers, so we remove it, force a reflow,
+  // then re-add it).
+  root.classList.remove('anim-fade');
+  root.innerHTML='';
+  void root.offsetWidth; // force reflow
+  root.classList.add('anim-fade');
   ({dashboard:pgDashboard,expenses:pgExpenses,budgets:pgBudgets,recurring:pgRecurring,bills:pgBills,reports:pgReports,profile:pgProfile}[PAGE]||pgDashboard)(root);
   renderIcons(root);
 }
@@ -960,10 +966,8 @@ function pgDashboard(root){
   // Upcoming bills
   const billCard=el('div',{cls:'card'});
   const billHdr=el('div',{cls:dashCardHdrStyle});billHdr.appendChild(el('h2',{style:dashCardHdrTitleStyle},'Upcoming Bills'));
-  const billHdrRight=el('div',{cls:'flex items-center gap-2'});
-  const billAddBtn=el('button',{cls:'btn-primary',style:{padding:'.25rem .65rem',fontSize:'.75rem',display:'flex',alignItems:'center',gap:'.25rem'}});billAddBtn.append(ic('plus',13),' Add Bill');billAddBtn.addEventListener('click',()=>navigate('bills'));
   const billAll=el('button',{style:dashSeeAllStyle});billAll.append('See all ',ic('arrow-right',12));billAll.addEventListener('click',()=>navigate('bills'));
-  billHdrRight.append(billAddBtn,billAll);billHdr.appendChild(billHdrRight);billCard.appendChild(billHdr);
+  billHdr.appendChild(billAll);billCard.appendChild(billHdr);
   const upcoming=s.bills.filter(b=>b.status!=='paid').sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,3);
   if(!upcoming.length){const e=el('div',{style:{textAlign:'center',padding:'1.5rem'}});e.append(el('p',{cls:'text-sm text-slate-400'},'No upcoming bills'));const b=el('button',{cls:'btn-primary mt-3',style:{margin:'.75rem auto 0',display:'flex'}});b.append(ic('plus',14),' Add Bill');b.addEventListener('click',()=>navigate('bills'));e.appendChild(b);billCard.appendChild(e)}
   else{const l=el('div',{cls:'space-y-2'});upcoming.forEach(bill=>{const isOv=bill.status==='overdue';const row=el('div',{cls:'flex items-center justify-between p-3 rounded-xl',style:{cursor:'pointer',transition:'background .15s'}});row.addEventListener('mouseenter',()=>{row.style.background=s.darkMode?'rgba(51,65,85,.4)':'#f8fafc'});row.addEventListener('mouseleave',()=>{row.style.background=''});row.addEventListener('click',()=>navigate('bills'));const lft=el('div',{cls:'flex items-center gap-3'});const iBox=el('div',{style:{width:'2rem',height:'2rem',borderRadius:'.5rem',display:'flex',alignItems:'center',justifyContent:'center',background:isOv?'#fee2e2':'#f0fdfa'}});const zIco=ic('zap',14);zIco.style.color=isOv?'#ef4444':'#0d9488';iBox.appendChild(zIco);const info=el('div');info.append(el('p',{cls:'text-sm font-medium',style:{color:s.darkMode?'#fff':'#1e293b'}},bill.name),el('p',{cls:'text-xs',style:{color:isOv?'#ef4444':'#64748b',fontWeight:isOv?'600':'400'}},daysUntilInfo(bill.dueDate).label));lft.append(iBox,info);row.append(lft,el('span',{cls:'text-sm font-semibold font-mono',style:{color:s.darkMode?'#cbd5e1':'#334155'}},formatETB(Number(bill.amount))));l.appendChild(row)});billCard.appendChild(l)}
