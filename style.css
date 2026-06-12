@@ -194,7 +194,7 @@ html.dark #bottom-nav{background:#0f172a;border-color:#1e293b}
 #mobile-overlay{position:fixed;inset:0;z-index:45;display:none}
 #mobile-overlay.open{display:block}
 #mobile-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.5)}
-#mobile-drawer{position:absolute;top:3.5rem;left:0;bottom:0;width:16rem;background:#fff;display:flex;flex-direction:column;animation:slideIn .2s ease-out;overflow-y:auto}
+#mobile-drawer{position:absolute;top:3.5rem;left:0;bottom:0;width:16rem;background:#fff;display:flex;flex-direction:column;animation:slideIn .2s ease-out;overflow-y:auto;padding-top:.5rem}
 html.dark #mobile-drawer{background:#0f172a}
 
 /* Nav items */
@@ -343,4 +343,11 @@ html.dark #ai-input:focus{background:#0f172a}
 @media(max-width:767px){
   #ai-fab{bottom:5.25rem;right:1rem}
   #ai-panel{bottom:8.75rem;right:.75rem;width:calc(100vw - 1.5rem);max-width:24rem}
+  /* Fix 2: Hide AI FAB when expense modal is open on mobile */
+  body.modal-open #ai-fab{display:none!important}
+  /* Fix 3: When AI panel is open, block background interaction with an overlay */
+  body.ai-panel-open::before{content:'';position:fixed;inset:0;z-index:58;background:rgba(0,0,0,.35);backdrop-filter:blur(1px)}
+  body.ai-panel-open{overflow:hidden;touch-action:none}
+  /* Keep AI fab and panel above the overlay */
+  body.ai-panel-open #ai-fab,body.ai-panel-open #ai-panel{z-index:62}
 }

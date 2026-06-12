@@ -119,9 +119,16 @@ function ic(name,sz=18,cls=''){
 }
 function renderIcons(root){if(window.lucide)window.lucide.createIcons({nameAttr:'data-lucide',elements:root?[root]:undefined})}
 function Toggle(checked,onChange,color='teal'){
-  const btn=el('button',{cls:'toggle-track'+(checked?' on':'')+(color==='blue'?' blue':''),type:'button'});
+  let state=checked;
+  const btn=el('button',{cls:'toggle-track'+(state?' on':'')+(color==='blue'?' blue':''),type:'button'});
   btn.appendChild(el('div',{cls:'toggle-thumb'}));
-  btn.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();onChange(!checked)});return btn;
+  btn.addEventListener('click',e=>{
+    e.preventDefault();e.stopPropagation();
+    state=!state;
+    btn.classList.toggle('on',state);
+    onChange(state);
+  });
+  return btn;
 }
 function ProgressBar(pct,isOver,isWarn){
   const bar=el('div',{cls:'progress-bar'});
@@ -326,6 +333,7 @@ const INITIAL={
   user:{name:'',email:'',phone:'',avatar:null},
   darkMode:false,
   notifications:{email:true},
+  notifSeenAt:null,
   language:localStorage.getItem(I18N_LANG_KEY)||'en'
 };
 function mergeState(raw){
@@ -381,6 +389,7 @@ function reducer(s,a){
     case 'TOGGLE_DARK':return{...s,darkMode:!s.darkMode};
     case 'SET_NOTIFICATIONS':return{...s,notifications:{...s.notifications,...a.payload}};
     case 'SET_LANGUAGE':return{...s,language:a.payload==='am'?'am':'en'};
+    case 'MARK_NOTIF_SEEN':return{...s,notifSeenAt:a.payload};
     default:return s;
   }
 }
@@ -454,11 +463,24 @@ function renderTopbar(){
   // Bell
   const recurDue=S.recurring.filter(r=>r.active&&r.nextDue<=todayStr());
   const alertCount=getBillAlertCount()+getBudgetAlerts().length+recurDue.length;
+  // Badge: only show when there are alerts AND user hasn't opened the bell yet today
+  const notifSeenDate=S.notifSeenAt?S.notifSeenAt.slice(0,10):null;
+  const showBadge=alertCount>0&&notifSeenDate!==todayStr();
   const bellWrap=el('div',{cls:'relative'});
   const bellBtn=el('button',{cls:'icon-btn',style:{position:'relative'}});bellBtn.appendChild(ic('bell',18));
-  if(alertCount>0){const bdg=el('span',{cls:'notif-badge'},alertCount>9?'9+':String(alertCount));bellBtn.appendChild(bdg)}
+  let bdgEl=null;
+  if(showBadge){const bdg=el('span',{cls:'notif-badge'},alertCount>9?'9+':String(alertCount));bellBtn.appendChild(bdg);bdgEl=bdg;}
   let notifOpen=false;
-  bellBtn.addEventListener('click',e=>{e.stopPropagation();notifOpen=!notifOpen;renderNotifDrop()});
+  bellBtn.addEventListener('click',e=>{
+    e.stopPropagation();
+    notifOpen=!notifOpen;
+    if(notifOpen&&bdgEl){
+      // Mark as seen — hide badge immediately without full re-render
+      dispatch({type:'MARK_NOTIF_SEEN',payload:new Date().toISOString()});
+      bdgEl.remove();bdgEl=null;
+    }
+    renderNotifDrop();
+  });
   bellWrap.appendChild(bellBtn);
   function renderNotifDrop(){
     bellWrap.querySelector('.ndrop')?.remove();if(!notifOpen)return;
@@ -545,9 +567,7 @@ function renderSidebar(){
 
 function renderMobileDrawer(){
   const d=document.getElementById('mobile-drawer');if(!d)return;d.innerHTML='';
-  const mLogo=el('div',{cls:'mobile-drawer-brand'});
-  mLogo.appendChild(appBrand({height:'2.5rem'}));
-  d.appendChild(mLogo);
+  // Note: logo is intentionally omitted here — the topbar already shows it above the drawer on mobile
   const addBtn=el('button',{cls:'btn-primary',style:{margin:'.75rem',width:'calc(100% - 1.5rem)',justifyContent:'center'}});
   addBtn.append(ic('plus-circle',16),' Add Expense');
   addBtn.addEventListener('click',()=>{closeMobileMenu();renderExpModal(null)});d.appendChild(addBtn);
@@ -587,7 +607,7 @@ function renderExpModal(editExp){
   const s=S;
   let form={amount:editExp?String(editExp.amount):'',category:editExp?.category||'Food',date:editExp?.date||todayStr(),note:editExp?.note||'',receipt:editExp?.receipt||null,isRecurring:false,recFreq:'monthly',recName:''};
   let errs={};
-  function close(){container.innerHTML=''}
+  function close(){container.innerHTML='';document.body.classList.remove('modal-open')}
   function submit(){
     errs={};
     if(!isValidAmount(form.amount))errs.amount='Enter a valid amount';
@@ -660,20 +680,35 @@ function renderExpModal(editExp){
       const recIco=ic('refresh-cw',16);recIco.style.color='#94a3b8';
       const recInfo=el('div',{style:{flex:1}});
       recInfo.append(el('p',{cls:'text-sm font-medium',style:{color:s.darkMode?'#cbd5e1':'#334155'}},'Make recurring'),el('p',{cls:'text-xs',style:{color:'#94a3b8'}},'Add to recurring expenses'));
-      const tog=Toggle(form.isRecurring,v=>{form.isRecurring=v;render()});
-      recRow.append(recIco,recInfo,tog);recCard.appendChild(recRow);
-      if(form.isRecurring){
-        const extra=el('div',{cls:'space-y-2 mt-3'});
-        const nmWrap=el('div');nmWrap.appendChild(el('label',{cls:'label'},'Recurring name *'));
-        const nmIn=el('input',{cls:'input'+(errs.recName?' error':''),placeholder:'e.g. Netflix, Rent'});nmIn.value=form.recName;
-        nmIn.addEventListener('input',e=>{form.recName=e.target.value;errs.recName=''});nmWrap.appendChild(nmIn);
-        if(errs.recName)nmWrap.appendChild(el('p',{cls:'text-xs mt-1',style:{color:'#ef4444'}},errs.recName));
-        const fqWrap=el('div');fqWrap.appendChild(el('label',{cls:'label'},'Frequency'));
-        const fqSel=el('select',{cls:'input text-sm'});
-        Object.entries(FREQ_LABELS).forEach(([k,v])=>{const o=el('option',{value:k},v);if(k===form.recFreq)o.selected=true;fqSel.appendChild(o)});
-        fqSel.addEventListener('change',e=>{form.recFreq=e.target.value});fqWrap.appendChild(fqSel);
-        extra.append(nmWrap,fqWrap);recCard.appendChild(extra);
-      }
+      // Build the extra fields div (always in DOM, animated show/hide)
+      const extra=el('div',{cls:'rec-extra space-y-2 mt-3',style:{overflow:'hidden',transition:'max-height .25s ease, opacity .25s ease',maxHeight:'0px',opacity:'0',pointerEvents:'none'}});
+      const nmWrap=el('div');nmWrap.appendChild(el('label',{cls:'label'},'Recurring name *'));
+      const nmIn=el('input',{cls:'input'+(errs.recName?' error':''),placeholder:'e.g. Netflix, Rent'});nmIn.value=form.recName;
+      nmIn.addEventListener('input',e=>{form.recName=e.target.value;errs.recName='';nmIn.classList.toggle('error',false)});nmWrap.appendChild(nmIn);
+      const recNameErr=el('p',{cls:'text-xs mt-1',style:{color:'#ef4444',display:errs.recName?'block':'none'}},errs.recName||'');
+      nmWrap.appendChild(recNameErr);
+      const fqWrap=el('div');fqWrap.appendChild(el('label',{cls:'label'},'Frequency'));
+      const fqSel=el('select',{cls:'input text-sm'});
+      Object.entries(FREQ_LABELS).forEach(([k,v])=>{const o=el('option',{value:k},v);if(k===form.recFreq)o.selected=true;fqSel.appendChild(o)});
+      fqSel.addEventListener('change',e=>{form.recFreq=e.target.value});fqWrap.appendChild(fqSel);
+      extra.append(nmWrap,fqWrap);
+      // Toggle handler: animate instead of full re-render
+      const tog=Toggle(form.isRecurring,v=>{
+        form.isRecurring=v;
+        if(v){
+          extra.style.pointerEvents='auto';
+          extra.style.maxHeight=extra.scrollHeight+'px';
+          extra.style.opacity='1';
+          setTimeout(()=>nmIn.focus(),260);
+        }else{
+          extra.style.maxHeight='0px';
+          extra.style.opacity='0';
+          extra.style.pointerEvents='none';
+        }
+      });
+      // Set initial state without animation if already on
+      if(form.isRecurring){extra.style.maxHeight='200px';extra.style.opacity='1';extra.style.pointerEvents='auto';}
+      recRow.append(recIco,recInfo,tog);recCard.appendChild(recRow);recCard.appendChild(extra);
       body.appendChild(recCard);
     }
     box.appendChild(body);
@@ -683,6 +718,7 @@ function renderExpModal(editExp){
     footer.append(cancelBtn,saveBtn);box.appendChild(footer);
     bd.appendChild(box);bd.addEventListener('click',e=>{if(e.target===bd)close()});
     container.appendChild(bd);renderIcons(container);
+    document.body.classList.add('modal-open');
     if(!editExp)setTimeout(()=>amtIn.focus(),50);
   }
   render();
@@ -2163,6 +2199,10 @@ sub(newS=>{
       panel.addEventListener('animationend',()=>panel.classList.remove('ai-opening'),{once:true});
       setTimeout(()=>document.getElementById('ai-input')?.focus(),240);
       scrollToBottom();
+      // Mobile: lock background scroll and block interactions
+      if(window.innerWidth<=767){
+        document.body.classList.add('ai-panel-open');
+      }
     }else{
       panel.classList.remove('ai-opening');
       panel.classList.add('ai-closing');
@@ -2170,6 +2210,8 @@ sub(newS=>{
         panel.classList.add('ai-hidden');
         panel.classList.remove('ai-closing');
       },{once:true});
+      // Mobile: restore background scroll
+      document.body.classList.remove('ai-panel-open');
     }
   }
 
