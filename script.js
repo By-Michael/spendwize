@@ -317,45 +317,13 @@ const Auth={
 
 // â•â•â•â•â•â• STATE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const SK='spendwise_state';
-function makeSampleData(){
-  const m=currentMonthStr();
-  return{
-    expenses:[
-      {id:'1',amount:350,category:'Food',date:todayStr(),note:'Morning coffee',receipt:null},
-      {id:'2',amount:800,category:'Transport',date:fmtDate(subDays(1)),note:'Taxi to office',receipt:null},
-      {id:'3',amount:4500,category:'Food',date:fmtDate(subDays(1)),note:'Grocery shopping',receipt:null},
-      {id:'4',amount:1200,category:'Entertainment',date:fmtDate(subDays(2)),note:'Movie ticket',receipt:null},
-      {id:'5',amount:2500,category:'Health',date:fmtDate(subDays(3)),note:'Pharmacy',receipt:null},
-      {id:'6',amount:6000,category:'Food',date:fmtDate(subDays(4)),note:'Restaurant dinner',receipt:null},
-      {id:'7',amount:1500,category:'Transport',date:fmtDate(subDays(5)),note:'Bus pass top-up',receipt:null},
-      {id:'8',amount:3000,category:'Shopping',date:fmtDate(subDays(6)),note:'Clothing store',receipt:null},
-      {id:'9',amount:500,category:'Food',date:fmtDate(subDays(7)),note:'Lunch snack',receipt:null},
-      {id:'10',amount:2200,category:'Entertainment',date:fmtDate(subDays(8)),note:'Netflix + Spotify',receipt:null},
-      {id:'11',amount:1800,category:'Food',date:fmtDate(subDays(9)),note:'Pizza delivery',receipt:null},
-      {id:'12',amount:50000,category:'Rent',date:fmtDate(subDays(10)),note:'Monthly rent',receipt:null},
-    ],
-    budgets:[
-      {id:'b1',category:'Food',limit:20000,month:m},{id:'b2',category:'Transport',limit:10000,month:m},
-      {id:'b3',category:'Entertainment',limit:5000,month:m},{id:'b4',category:'Health',limit:8000,month:m},
-      {id:'b5',category:'Shopping',limit:15000,month:m},
-    ],
-    recurring:[
-      {id:'r1',name:'Rent',amount:50000,category:'Rent',frequency:'monthly',startDate:fmtDate(subDays(90)),endDate:null,nextDue:fmtDate(addMonths(1)),active:true},
-      {id:'r2',name:'Netflix',amount:1500,category:'Entertainment',frequency:'monthly',startDate:fmtDate(subDays(60)),endDate:null,nextDue:fmtDate(addDays(5)),active:true},
-      {id:'r3',name:'Gym Membership',amount:3000,category:'Health',frequency:'monthly',startDate:fmtDate(subDays(45)),endDate:null,nextDue:fmtDate(addDays(12)),active:true},
-      {id:'r4',name:'Weekly Groceries',amount:5000,category:'Food',frequency:'weekly',startDate:fmtDate(subDays(30)),endDate:null,nextDue:fmtDate(addDays(2)),active:true},
-    ],
-    bills:[
-      {id:'bl1',name:'Electricity',amount:2500,dueDate:fmtDate(addDays(3)),status:'upcoming',paidDate:null,reference:null,category:'electricity'},
-      {id:'bl2',name:'Internet',amount:4000,dueDate:fmtDate(addDays(1)),status:'upcoming',paidDate:null,reference:null,category:'internet'},
-      {id:'bl3',name:'Water',amount:1200,dueDate:fmtDate(subDays(5)),status:'overdue',paidDate:null,reference:null,category:'water'},
-      {id:'bl4',name:'TV Subscription',amount:1800,dueDate:fmtDate(subDays(10)),status:'paid',paidDate:fmtDate(subDays(11)),reference:'TLB-2024-001',category:'tv'},
-    ],
-  };
-}
 const INITIAL={
-  ...makeSampleData(),
-  categories:CATEGORIES.slice(),user:{name:'Alex',email:'',phone:'',avatar:null},
+  expenses:[],
+  budgets:[],
+  recurring:[],
+  bills:[],
+  categories:CATEGORIES.slice(),
+  user:{name:'',email:'',phone:'',avatar:null},
   darkMode:false,
   notifications:{email:true},
   language:localStorage.getItem(I18N_LANG_KEY)||'en'
