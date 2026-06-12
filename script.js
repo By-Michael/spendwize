@@ -2089,4 +2089,246 @@ sub(newS=>{
   else renderPage();
 });
 
+// ══════════════════ AI CHAT WIDGET ══════════════════════════════════════════
+(function(){
+  // ── State ────────────────────────────────────────────────────────────────
+  let open=false, sending=false;
+  const messages=[];   // {role:'user'|'ai', text:string, time:string}
+  let unread=0;
+
+  function nowTime(){
+    return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  }
+
+  // ── DOM creation (once) ──────────────────────────────────────────────────
+  function buildWidget(){
+    // FAB button
+    const fab=document.createElement('button');
+    fab.id='ai-fab';
+    fab.setAttribute('aria-label','Open AI financial advisor');
+    fab.innerHTML=`
+      <span class="ai-fab-icon" style="line-height:0">${svgSparkle()}</span>
+      <span class="ai-fab-icon ai-fab-close" style="line-height:0">${svgX()}</span>
+      <span id="ai-badge" class="hidden">0</span>`;
+    fab.addEventListener('click',togglePanel);
+
+    // Panel
+    const panel=document.createElement('div');
+    panel.id='ai-panel';
+    panel.classList.add('ai-hidden');
+    panel.innerHTML=`
+      <div id="ai-header">
+        <div id="ai-header-icon">${svgBot()}</div>
+        <div id="ai-header-text">
+          <div id="ai-header-title">SpendWise AI</div>
+          <div id="ai-header-sub" id="ai-status">Your financial advisor</div>
+        </div>
+        <button id="ai-clear-btn" title="Clear conversation">${svgTrash()}</button>
+      </div>
+      <div id="ai-messages"></div>
+      <div id="ai-footer">
+        <textarea id="ai-input" placeholder="Ask about your finances…" rows="1"></textarea>
+        <button id="ai-send" disabled aria-label="Send">${svgSend()}</button>
+      </div>`;
+
+    document.body.appendChild(fab);
+    document.body.appendChild(panel);
+
+    // Wire events
+    const input=document.getElementById('ai-input');
+    const sendBtn=document.getElementById('ai-send');
+
+    input.addEventListener('input',()=>{
+      sendBtn.disabled=input.value.trim()===''||sending;
+      // Auto-resize textarea
+      input.style.height='auto';
+      input.style.height=Math.min(input.scrollHeight,112)+'px';
+    });
+    input.addEventListener('keydown',e=>{
+      if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}
+    });
+    sendBtn.addEventListener('click',sendMessage);
+    document.getElementById('ai-clear-btn').addEventListener('click',clearChat);
+
+    renderMessages();
+  }
+
+  // ── SVG icons (inline, no external dep) ─────────────────────────────────
+  function svgSparkle(){
+    return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/>
+      <path d="M5 19l.75 2.25L8 22l-2.25.75L5 25l-.75-2.25L2 22l2.25-.75z" opacity=".6"/></svg>`;}
+  function svgX(){
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;}
+  function svgBot(){
+    return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/>
+      <line x1="12" y1="7" x2="12" y2="11"/><line x1="8" y1="16" x2="8" y2="16" stroke-width="3"/>
+      <line x1="16" y1="16" x2="16" y2="16" stroke-width="3"/></svg>`;}
+  function svgSend(){
+    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;}
+  function svgTrash(){
+    return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+      <path d="M9 6V4h6v2"/></svg>`;}
+
+  // ── Toggle open/close ────────────────────────────────────────────────────
+  function togglePanel(){
+    open=!open;
+    const fab=document.getElementById('ai-fab');
+    const panel=document.getElementById('ai-panel');
+    fab.classList.toggle('open',open);
+
+    if(open){
+      unread=0;
+      updateBadge();
+      panel.classList.remove('ai-hidden','ai-closing');
+      panel.classList.add('ai-opening');
+      panel.addEventListener('animationend',()=>panel.classList.remove('ai-opening'),{once:true});
+      setTimeout(()=>document.getElementById('ai-input')?.focus(),240);
+      scrollToBottom();
+    }else{
+      panel.classList.remove('ai-opening');
+      panel.classList.add('ai-closing');
+      panel.addEventListener('animationend',()=>{
+        panel.classList.add('ai-hidden');
+        panel.classList.remove('ai-closing');
+      },{once:true});
+    }
+  }
+
+  function updateBadge(){
+    const b=document.getElementById('ai-badge');
+    if(!b)return;
+    if(unread>0&&!open){b.textContent=unread>9?'9+':String(unread);b.classList.remove('hidden');}
+    else b.classList.add('hidden');
+  }
+
+  // ── Messages rendering ───────────────────────────────────────────────────
+  function renderMessages(){
+    const box=document.getElementById('ai-messages');
+    if(!box)return;
+    box.innerHTML='';
+
+    if(messages.length===0){
+      const s=getState();
+      const name=s.user?.name?.split(' ')[0]||'there';
+      box.innerHTML=`<div id="ai-empty">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <div style="font-weight:600;color:var(--ai-empty-title,#475569)">Hi ${escHtml(name)}! 👋</div>
+        <div>Ask me anything about your spending, budgets, or bills.</div>
+      </div>`;
+      return;
+    }
+
+    messages.forEach(m=>{
+      const wrap=document.createElement('div');
+      wrap.className='ai-msg '+(m.role==='user'?'user':'ai');
+      const bubble=document.createElement('div');
+      bubble.className='ai-bubble';
+      bubble.innerHTML=formatAiText(m.text);
+      const ts=document.createElement('div');
+      ts.className='ai-timestamp';
+      ts.textContent=m.time;
+      wrap.append(bubble,ts);
+      box.appendChild(wrap);
+    });
+    scrollToBottom();
+  }
+
+  function addTypingIndicator(){
+    const box=document.getElementById('ai-messages');
+    if(!box)return;
+    const wrap=document.createElement('div');
+    wrap.className='ai-msg ai ai-typing';
+    wrap.id='ai-typing-indicator';
+    wrap.innerHTML=`<div class="ai-bubble"><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span></div>`;
+    box.appendChild(wrap);
+    scrollToBottom();
+  }
+
+  function removeTypingIndicator(){
+    document.getElementById('ai-typing-indicator')?.remove();
+  }
+
+  function scrollToBottom(){
+    const box=document.getElementById('ai-messages');
+    if(box)setTimeout(()=>{box.scrollTop=box.scrollHeight;},30);
+  }
+
+  // Format AI text: bold, line breaks
+  function formatAiText(text){
+    return escHtml(text)
+      .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\n/g,'<br>');
+  }
+
+  function escHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Send message ─────────────────────────────────────────────────────────
+  async function sendMessage(){
+    const input=document.getElementById('ai-input');
+    const sendBtn=document.getElementById('ai-send');
+    if(!input)return;
+    const text=input.value.trim();
+    if(!text||sending)return;
+
+    sending=true;
+    sendBtn.disabled=true;
+    input.value='';
+    input.style.height='auto';
+
+    messages.push({role:'user',text,time:nowTime()});
+    renderMessages();
+    addTypingIndicator();
+    setStatus('Thinking…');
+
+    try{
+      const res=await fetch('ai.php?action=chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:text}),
+      });
+      const data=await res.json();
+      removeTypingIndicator();
+
+      if(data.ok&&data.data?.reply){
+        messages.push({role:'ai',text:data.data.reply,time:nowTime()});
+        if(!open){unread++;updateBadge();}
+      }else{
+        messages.push({role:'ai',text:'Sorry, something went wrong. Please try again.',time:nowTime()});
+      }
+    }catch(e){
+      removeTypingIndicator();
+      messages.push({role:'ai',text:'Network error. Please check your connection.',time:nowTime()});
+    }finally{
+      sending=false;
+      sendBtn.disabled=input.value.trim()==='';
+      setStatus('Your financial advisor');
+      renderMessages();
+    }
+  }
+
+  // ── Clear conversation ───────────────────────────────────────────────────
+  async function clearChat(){
+    messages.length=0;
+    renderMessages();
+    try{await fetch('ai.php?action=clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}
+    catch(e){}
+  }
+
+  function setStatus(text){
+    const el=document.getElementById('ai-header-sub');
+    if(el)el.textContent=text;
+  }
+
+  // ── Boot: only show widget when logged in ───────────────────────────────
+  if(Auth.session())buildWidget();
+})();
+
 renderApp();

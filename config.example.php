@@ -21,4 +21,5 @@ return [
         'from_name'  => 'SpendWise',
     ],
     'google_client_id' => '',   // from Google Cloud Console > APIs & Services > Credentials
+    'groq_api_key' => '',       // from console.groq.com/keys — free tier, powers the AI advisor
 ];
