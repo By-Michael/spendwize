@@ -10,31 +10,39 @@ use PHPMailer\PHPMailer\PHPMailer;
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-$_db = file_exists(__DIR__ . '/db.local.php')
-    ? require __DIR__ . '/db.local.php'
-    : ['host' => 'sql308.infinityfree.com',
-       'user' => 'if0_42058918',
-       'pass' => 'oakgSUIZPXsRaU',
-       'name' => 'if0_42058918_spendwise_app'];
+// Load config — local dev takes priority, then production, then fail loudly.
+// Neither file is committed to git (both are in .gitignore).
+// On your server, upload config.production.php manually via FTP.
+if (file_exists(__DIR__ . '/config.php')) {
+    $_cfg = require __DIR__ . '/config.php';
+} elseif (file_exists(__DIR__ . '/config.production.php')) {
+    $_cfg = require __DIR__ . '/config.production.php';
+} else {
+    die('Missing config file. Copy config.example.php to config.php and fill in your values.');
+}
 
-define('SW_DB_HOST', $_db['host']);
-define('SW_DB_USER', $_db['user']);
-define('SW_DB_PASS', $_db['pass']);
-define('SW_DB_NAME', $_db['name']);
-unset($_db);
-const SW_SESSION_KEY = 'spendwise_user';
-const SW_RESET_KEY = 'spendwise_verified_resets';
-const SW_OTP_EXPIRES_IN = 300;
-const SW_GOOGLE_CLIENT_ID = '717478416920-72ranir6avbt3u3ouviq9rgk64n6b3p0.apps.googleusercontent.com';
-const SW_GOOGLE_CERTS_URL = 'https://www.googleapis.com/oauth2/v1/certs';
+define('SW_DB_HOST',  (string) ($_cfg['db']['host'] ?? ''));
+define('SW_DB_USER',  (string) ($_cfg['db']['user'] ?? ''));
+define('SW_DB_PASS',  (string) ($_cfg['db']['pass'] ?? ''));
+define('SW_DB_NAME',  (string) ($_cfg['db']['name'] ?? ''));
+define('SW_GOOGLE_CLIENT_ID', (string) ($_cfg['google_client_id'] ?? ''));
+
+// SMTP — read from config, fall back to safe empty defaults
+define('SW_SMTP_HOST',       (string) ($_cfg['smtp']['host']       ?? 'smtp.gmail.com'));
+define('SW_SMTP_PORT',       (int)    ($_cfg['smtp']['port']       ?? 587));
+define('SW_SMTP_SECURE',     (string) ($_cfg['smtp']['secure']     ?? 'tls'));
+define('SW_SMTP_USERNAME',   (string) ($_cfg['smtp']['username']   ?? ''));
+define('SW_SMTP_PASSWORD',   (string) ($_cfg['smtp']['password']   ?? ''));
+define('SW_SMTP_FROM_EMAIL', (string) ($_cfg['smtp']['from_email'] ?? ''));
+define('SW_SMTP_FROM_NAME',  (string) ($_cfg['smtp']['from_name']  ?? 'SpendWise'));
+unset($_cfg);
+
+const SW_SESSION_KEY           = 'spendwise_user';
+const SW_RESET_KEY             = 'spendwise_verified_resets';
+const SW_OTP_EXPIRES_IN        = 300;
+const SW_SMTP_TIMEOUT          = 20;
+const SW_GOOGLE_CERTS_URL      = 'https://www.googleapis.com/oauth2/v1/certs';
 const SW_GOOGLE_CERT_CACHE_TTL = 3600;
-const SW_SMTP_HOST = 'smtp.gmail.com';
-const SW_SMTP_PORT = 587;
-const SW_SMTP_SECURE = 'tls';
-const SW_SMTP_TIMEOUT = 20;
-const SW_SMTP_USERNAME = '';
-const SW_SMTP_PASSWORD = '';
-const SW_SMTP_FROM_NAME = 'SpendWise';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();

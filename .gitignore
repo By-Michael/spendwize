@@ -1,27 +1,29 @@
-# Local config with real credentials — never commit this
+# ── Secrets & local config ───────────────────────────────────────────────────
+# These files hold real credentials — NEVER commit them.
+config.php
+config.production.php
 mailer.local.php
 db.local.php
 
-# Environment / secrets
+# Environment files
 .env
 .env.*
 !.env.example
 
-# Dependencies (if you ever add Composer)
+# ── Dependencies ─────────────────────────────────────────────────────────────
 vendor/
 
-# OS files
+# ── OS files ─────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Editor directories
+# ── Editor directories ───────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
-db.local.php
 
-# i18n build artifacts
+# ── i18n build artifacts ─────────────────────────────────────────────────────
 xlsx_extract/
 translations.zip
 excel_preview.txt
