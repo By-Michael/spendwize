@@ -571,7 +571,7 @@ function renderSidebar(){
   const bottom=el('div',{style:{padding:'.5rem',borderTop:'1px solid '+(S.darkMode?'#1e293b':'#f1f5f9')}});
   const logBtn=el('button',{cls:'nav-item w-full',style:{color:'#94a3b8'}});
   logBtn.append(ic('log-out',16),sidebarCollapsed?'':' Logout');
-  logBtn.addEventListener('click',async()=>{await Auth.logout();renderApp()});bottom.appendChild(logBtn);
+  logBtn.addEventListener('click',async()=>{await Auth.logout();if(window._swDestroyAIWidget)window._swDestroyAIWidget();renderApp()});bottom.appendChild(logBtn);
   sb.appendChild(bottom);renderIcons(sb);
 }
 
@@ -592,7 +592,7 @@ function renderMobileDrawer(){
   d.appendChild(nav);
   const logBtn=el('button',{cls:'nav-item',style:{margin:'.5rem',color:'#94a3b8'}});
   logBtn.append(ic('log-out',16),' Logout');
-  logBtn.addEventListener('click',async()=>{await Auth.logout();renderApp()});d.appendChild(logBtn);
+  logBtn.addEventListener('click',async()=>{await Auth.logout();if(window._swDestroyAIWidget)window._swDestroyAIWidget();renderApp()});d.appendChild(logBtn);
   renderIcons(d);
 }
 
@@ -1973,7 +1973,7 @@ function pgProfile(root){
       saveBtn.addEventListener('click',async()=>{dispatch({type:'UPDATE_USER',payload:{name:nameVal}});try{await Auth.updateProfile({name:nameVal});saved=true;render();setTimeout(()=>{saved=false;render()},2000)}catch(err){alert(err.message)}});
       infoCard.appendChild(saveBtn);root.appendChild(infoCard);
       // Logout
-      const logCard=el('div',{cls:'card mb-4'});const logBtn=el('button',{cls:'btn-secondary w-full',style:{justifyContent:'center'}});logBtn.append(ic('log-out',16),' Logout');logBtn.addEventListener('click',async()=>{await Auth.logout();renderApp()});logCard.appendChild(logBtn);root.appendChild(logCard);
+      const logCard=el('div',{cls:'card mb-4'});const logBtn=el('button',{cls:'btn-secondary w-full',style:{justifyContent:'center'}});logBtn.append(ic('log-out',16),' Logout');logBtn.addEventListener('click',async()=>{await Auth.logout();if(window._swDestroyAIWidget)window._swDestroyAIWidget();renderApp()});logCard.appendChild(logBtn);root.appendChild(logCard);
       // Danger zone
       const dangerCard=el('div',{cls:'card',style:{border:'1px solid '+(s.darkMode?'rgba(185,28,28,.5)':'#fee2e2')}});dangerCard.append(el('h3',{cls:'font-semibold mb-2',style:{color:'#dc2626'}},'Danger Zone'),el('p',{cls:'text-xs text-slate-400 mb-3'},'Permanently deletes all expenses, budgets, and settings.'));
       const clrBtn=el('button',{cls:'btn-danger'});clrBtn.append(ic('trash-2',14),' Clear All Data');
@@ -2081,6 +2081,8 @@ function applyTheme(dark){document.documentElement.classList.toggle('dark',!!dar
 function renderApp(){
   applyTheme(S.darkMode);
   if(!Auth.session()){renderLogin();return}
+  // Mount the AI widget if this is the first render after login
+  if(window._swInitAIWidget)window._swInitAIWidget();
   if(PAGE==='groups')PAGE='dashboard';
   renderLayout();renderPage();
 }
@@ -2331,8 +2333,24 @@ sub(newS=>{
     if(el)el.textContent=text;
   }
 
-  // ── Boot: only show widget when logged in ───────────────────────────────
-  if(Auth.session())buildWidget();
+  // ── Boot helpers ─────────────────────────────────────────────────────────
+  // _swInitAIWidget: safe to call multiple times — only builds the widget once.
+  // Called at page load (if already authed) AND by renderApp() after login.
+  window._swInitAIWidget=function(){
+    if(document.getElementById('ai-fab'))return;  // already mounted
+    buildWidget();
+  };
+
+  // _swDestroyAIWidget: called by all logout paths.
+  // Removes widget from DOM and wipes conversation so next user starts clean.
+  window._swDestroyAIWidget=function(){
+    open=false;sending=false;messages.length=0;unread=0;
+    document.getElementById('ai-fab')?.remove();
+    document.getElementById('ai-panel')?.remove();
+  };
+
+  // Initial mount (handles page-load when session cookie already exists)
+  if(Auth.session())window._swInitAIWidget();
 })();
 
 renderApp();
