@@ -27,6 +27,7 @@ define('SW_DB_PASS',  (string) ($_cfg['db']['pass'] ?? ''));
 define('SW_DB_NAME',  (string) ($_cfg['db']['name'] ?? ''));
 define('SW_GOOGLE_CLIENT_ID', (string) ($_cfg['google_client_id'] ?? ''));
 define('SW_GROQ_API_KEY', (string) ($_cfg['groq_api_key'] ?? getenv('SW_GROQ_API_KEY') ?: ''));
+define('SW_OCRSPACE_API_KEY', (string) ($_cfg['ocrspace_api_key'] ?? getenv('SW_OCRSPACE_API_KEY') ?: ''));
 
 // SMTP — read from config, fall back to safe empty defaults
 define('SW_SMTP_HOST',       (string) ($_cfg['smtp']['host']       ?? 'smtp.gmail.com'));

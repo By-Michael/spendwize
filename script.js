@@ -607,7 +607,35 @@ function renderExpModal(editExp){
   const s=S;
   let form={amount:editExp?String(editExp.amount):'',category:editExp?.category||'Food',date:editExp?.date||todayStr(),note:editExp?.note||'',receipt:editExp?.receipt||null,isRecurring:false,recFreq:'monthly',recName:''};
   let errs={};
+  let scanning=false;
+  let scanError='';
+  let scanNotice='';
   function close(){container.innerHTML='';document.body.classList.remove('modal-open')}
+  async function scanReceipt(dataUrl){
+    scanning=true;scanError='';scanNotice='';render();
+    try{
+      const res=await fetch('receipt.php?action=scan',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        credentials:'same-origin',
+        body:JSON.stringify({image:dataUrl,categories:S.categories||CATEGORIES})
+      });
+      const data=await res.json();
+      if(!res.ok||data.ok===false)throw new Error(data.error||'Could not scan receipt.');
+      const f=data.data?.fields||{};
+      const applied=[];
+      if(f.amount){form.amount=String(f.amount);applied.push('amount')}
+      if(f.date){form.date=f.date;applied.push('date')}
+      if(f.category){form.category=f.category;applied.push('category')}
+      if(f.note){form.note=f.note;applied.push('note')}
+      errs.amount='';errs.date='';
+      scanNotice=applied.length?'Filled in '+applied.join(', ')+' from receipt. Please double-check before saving.':'Receipt attached, but no details could be read automatically — please fill in the fields manually.';
+    }catch(e){
+      scanError=e.message||'Could not scan receipt. You can still fill in the details manually.';
+    }finally{
+      scanning=false;render();
+    }
+  }
   function submit(){
     errs={};
     if(!isValidAmount(form.amount))errs.amount='Enter a valid amount';
@@ -656,14 +684,39 @@ function renderExpModal(editExp){
     const noteIn=el('input',{cls:'input',placeholder:'What was this for?'});noteIn.value=form.note;
     noteIn.addEventListener('input',e=>{form.note=e.target.value});noteWrap.appendChild(noteIn);body.appendChild(noteWrap);
     // Receipt
-    const recWrap=el('div');recWrap.appendChild(el('label',{cls:'label'},'Receipt (optional)'));
+    const recWrap=el('div');
+    const recLblRow=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.4rem'}});
+    recLblRow.appendChild(el('label',{cls:'label',style:{margin:0}},'Receipt (optional)'));
+    recWrap.appendChild(recLblRow);
+    // Scan-from-photo action row
+    const scanRow=el('div',{style:{display:'flex',gap:'.5rem',marginBottom:'.6rem'}});
+    const scanBtn=el('button',{type:'button',cls:'btn-secondary',style:{flex:1,justifyContent:'center',gap:'.4rem',fontSize:'.8rem',opacity:scanning?'.6':'1',pointerEvents:scanning?'none':'auto'}});
+    scanBtn.append(scanning?ic('loader-circle',15,'spin-icon'):ic('scan-line',15),scanning?' Scanning…':' Scan Receipt');
+    const scanFileIn=el('input',{type:'file',accept:'image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,image/*',capture:'environment',cls:'hidden'});
+    scanFileIn.addEventListener('change',e=>{
+      const f=e.target.files[0];if(!f)return;
+      if(f.size>5*1024*1024){alert('File must be under 5 MB');return}
+      if(/avif|heic|heif/i.test(f.type)||/\.(avif|heic|heif)$/i.test(f.name)){
+        scanError='This file format isn\'t supported for scanning. Please use a JPG or PNG photo.';scanNotice='';render();return;
+      }
+      const r=new FileReader();
+      r.onload=ev=>{
+        form.receipt=ev.target.result;
+        scanReceipt(ev.target.result);
+      };
+      r.readAsDataURL(f);
+    });
+    scanBtn.addEventListener('click',()=>{if(!scanning)scanFileIn.click()});
+    scanRow.append(scanBtn,scanFileIn);recWrap.appendChild(scanRow);
+    if(scanError)recWrap.appendChild(el('p',{cls:'text-xs',style:{color:'#ef4444',marginBottom:'.5rem'}},scanError));
+    if(scanNotice)recWrap.appendChild(el('p',{cls:'text-xs',style:{color:'#0d9488',marginBottom:'.5rem'}},scanNotice));
     const dropZone=el('div',{style:{border:'2px dashed #e2e8f0',borderRadius:'.75rem',padding:'1rem',textAlign:'center',cursor:'pointer',transition:'border-color .15s'}});
     dropZone.addEventListener('mouseenter',()=>{dropZone.style.borderColor='#0d9488'});
     dropZone.addEventListener('mouseleave',()=>{dropZone.style.borderColor='#e2e8f0'});
     if(form.receipt){
       const img=el('img',{src:form.receipt,alt:'Receipt',style:{maxHeight:'7rem',margin:'0 auto',borderRadius:'.5rem',display:'block',objectFit:'cover'}});
       const rmBtn=el('button',{style:{color:'#ef4444',fontSize:'.75rem',marginTop:'.5rem',background:'none',border:'none',cursor:'pointer'}},'Remove');
-      rmBtn.addEventListener('click',e=>{e.stopPropagation();form.receipt=null;render()});
+      rmBtn.addEventListener('click',e=>{e.stopPropagation();form.receipt=null;scanError='';scanNotice='';render()});
       dropZone.append(img,rmBtn);
     }else{
       const uIco=ic('upload',24);uIco.style.cssText='margin:0 auto;display:block;color:#94a3b8';
