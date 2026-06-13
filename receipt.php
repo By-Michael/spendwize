@@ -436,7 +436,9 @@ function sw_receipt_extract_fields(string $ocrText, array $categories): array
 
     $category = $fields['category'] ?? null;
     if (!is_string($category) || !in_array($category, $categories, true)) {
-        $category = null;
+        // Fall back to "Other" so the category field is always filled in,
+        // as long as "Other" exists in this user's category list.
+        $category = in_array('Other', $categories, true) ? 'Other' : null;
     }
 
     $merchant = $fields['merchant'] ?? null;
