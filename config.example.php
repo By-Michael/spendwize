@@ -1,7 +1,7 @@
 <?php
 // config.example.php — safe template, commit this to git
 // To set up locally:  copy this file to config.php and fill in your values.
-// To set up on server: copy this file to config.production.php, fill in values,
+// To t up on server: copy this file to config.production.php, fill in values,
 //                      then upload via FTP — never via git push.
 
 return [
