@@ -1,4 +1,4 @@
-# SpendWise 💰
+/# SpendWise 💰
 
 A personal finance web app for tracking expenses, managing budgets, monitoring bills, and understanding your spending — built for **Ethiopian Birr (ETB)** users, with full **Amharic (አማርኛ) language support**.
 
