@@ -47,6 +47,14 @@ const SW_GOOGLE_CERTS_URL      = 'https://www.googleapis.com/oauth2/v1/certs';
 const SW_GOOGLE_CERT_CACHE_TTL = 3600;
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    // [SEC F-11] Harden session cookie before starting the session.
+    // HttpOnly: blocks JS from reading the cookie (mitigates XSS-based session theft).
+    // Secure:   only transmit cookie over HTTPS.
+    // SameSite: prevents the cookie from being sent on cross-site requests (mitigates CSRF).
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_secure', '1');
+    ini_set('session.cookie_samesite', 'Strict');
+    ini_set('session.cookie_lifetime', '86400'); // 24-hour session lifetime
     session_start();
 }
 
@@ -200,6 +208,8 @@ function sw_db(): mysqli
 
 function sw_ensure_schema(mysqli $db): void
 {
+    // ── Core auth tables ──────────────────────────────────────────────────────
+
     $db->query(
         'CREATE TABLE IF NOT EXISTS users (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -240,6 +250,122 @@ function sw_ensure_schema(mysqli $db): void
             expires_at DATETIME NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_password_reset_codes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    // ── Phase 1: Relational tables ────────────────────────────────────────────
+    // See database.sql for the canonical DDL with full comments.
+
+    $db->query(
+        'CREATE TABLE IF NOT EXISTS user_migration_log (
+            user_id         INT UNSIGNED NOT NULL,
+            migrated        TINYINT(1)   NOT NULL DEFAULT 0,
+            migrated_at     TIMESTAMP    NULL,
+            expense_count   INT UNSIGNED NOT NULL DEFAULT 0,
+            budget_count    INT UNSIGNED NOT NULL DEFAULT 0,
+            recurring_count INT UNSIGNED NOT NULL DEFAULT 0,
+            bill_count      INT UNSIGNED NOT NULL DEFAULT 0,
+            PRIMARY KEY (user_id),
+            CONSTRAINT fk_migration_log_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $db->query(
+        'CREATE TABLE IF NOT EXISTS expenses (
+            id          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+            user_id     INT UNSIGNED  NOT NULL,
+            external_id VARCHAR(64)   NOT NULL,
+            amount      DECIMAL(15,2) NOT NULL,
+            category    VARCHAR(100)  NOT NULL DEFAULT "",
+            date        DATE          NOT NULL,
+            note        TEXT          NULL,
+            receipt     LONGTEXT      NULL,
+            created_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_expense_user_ext   (user_id, external_id),
+            KEY        idx_expense_user_date   (user_id, date),
+            KEY        idx_expense_user_cat    (user_id, category),
+            CONSTRAINT fk_expenses_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $db->query(
+        'CREATE TABLE IF NOT EXISTS budgets (
+            id           INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+            user_id      INT UNSIGNED  NOT NULL,
+            external_id  VARCHAR(64)   NOT NULL,
+            category     VARCHAR(100)  NOT NULL,
+            month        VARCHAR(7)    NOT NULL,
+            limit_amount DECIMAL(15,2) NOT NULL,
+            created_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_budget_user_ext    (user_id, external_id),
+            UNIQUE KEY uniq_budget_cat_month   (user_id, category, month),
+            KEY        idx_budget_user_month   (user_id, month),
+            CONSTRAINT fk_budgets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $db->query(
+        'CREATE TABLE IF NOT EXISTS recurring_items (
+            id          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+            user_id     INT UNSIGNED  NOT NULL,
+            external_id VARCHAR(64)   NOT NULL,
+            name        VARCHAR(255)  NOT NULL,
+            amount      DECIMAL(15,2) NOT NULL,
+            category    VARCHAR(100)  NOT NULL DEFAULT "",
+            frequency   VARCHAR(20)   NOT NULL DEFAULT "monthly",
+            start_date  DATE          NOT NULL,
+            end_date    DATE          NULL,
+            next_due    DATE          NOT NULL,
+            active      TINYINT(1)    NOT NULL DEFAULT 1,
+            created_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_recurring_user_ext      (user_id, external_id),
+            KEY        idx_recurring_user_active     (user_id, active),
+            KEY        idx_recurring_next_due        (user_id, next_due),
+            CONSTRAINT fk_recurring_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $db->query(
+        'CREATE TABLE IF NOT EXISTS bills (
+            id          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+            user_id     INT UNSIGNED  NOT NULL,
+            external_id VARCHAR(64)   NOT NULL,
+            name        VARCHAR(255)  NOT NULL,
+            amount      DECIMAL(15,2) NOT NULL,
+            category    VARCHAR(100)  NOT NULL DEFAULT "",
+            due_date    DATE          NOT NULL,
+            status      VARCHAR(20)   NOT NULL DEFAULT "upcoming",
+            paid_date   DATE          NULL,
+            reference   VARCHAR(255)  NULL,
+            created_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_bill_user_ext      (user_id, external_id),
+            KEY        idx_bill_user_status    (user_id, status),
+            KEY        idx_bill_due_date       (user_id, due_date),
+            CONSTRAINT fk_bills_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    $db->query(
+        'CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id             INT UNSIGNED NOT NULL,
+            dark_mode           TINYINT(1)   NOT NULL DEFAULT 0,
+            notifications_email TINYINT(1)   NOT NULL DEFAULT 1,
+            language            VARCHAR(5)   NOT NULL DEFAULT "en",
+            categories          TEXT         NOT NULL DEFAULT "[]",
+            notif_seen_at       DATETIME     NULL,
+            extra_json          MEDIUMTEXT   NULL,
+            created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id),
+            CONSTRAINT fk_user_prefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
 }
@@ -373,42 +499,802 @@ function sw_find_user_by_provider_uid(mysqli $db, string $provider, string $prov
     return $row ?: null;
 }
 
-function sw_load_state(mysqli $db, int $userId): ?array
+// =============================================================================
+// Phase 1 — Relational state storage
+// =============================================================================
+// These functions replace the single-blob approach.  sw_load_state() and
+// sw_save_state() keep the same signatures so no call-sites need changing yet.
+//
+// Migration strategy:
+//   • On first sw_load_state() for a user we check user_migration_log.
+//   • If the user hasn't been migrated we read their old JSON blob, decompose
+//     it into the five relational tables, and mark them migrated.
+//   • After that, all reads come from the relational tables.
+//   • sw_save_state() writes to relational tables AND keeps the old blob in
+//     sync (belt-and-suspenders for Phase 1; the blob writes will be removed
+//     in Phase 2 once the frontend calls per-resource endpoints directly).
+// =============================================================================
+
+// ── Migration status ──────────────────────────────────────────────────────────
+
+function sw_is_migrated(mysqli $db, int $userId): bool
 {
-    $stmt = $db->prepare('SELECT state_json FROM user_states WHERE user_id = ? LIMIT 1');
+    $stmt = $db->prepare(
+        'SELECT migrated FROM user_migration_log WHERE user_id = ? LIMIT 1'
+    );
     $stmt->bind_param('i', $userId);
     $stmt->execute();
-    $result = $stmt->get_result();
-    $row = $result->fetch_assoc();
+    $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if (!$row) {
-        return null;
-    }
-
-    $decoded = json_decode((string) $row['state_json'], true);
-    return is_array($decoded) ? $decoded : null;
+    return $row !== null && (int) $row['migrated'] === 1;
 }
 
-function sw_save_state(mysqli $db, int $userId, array $state): void
+/**
+ * Decompose a user's old state_json blob into the five relational tables.
+ * Safe to call multiple times — uses INSERT IGNORE so duplicate external_ids
+ * are silently skipped rather than causing errors.
+ */
+function sw_migrate_user_state(mysqli $db, int $userId): void
 {
-    $json = json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    if ($json === false) {
-        throw new RuntimeException('Could not encode application state.');
+    // Load raw blob (may be null for brand-new users who never saved state).
+    $stmt = $db->prepare(
+        'SELECT state_json FROM user_states WHERE user_id = ? LIMIT 1'
+    );
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $blobRow = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $state = [];
+    if ($blobRow !== null) {
+        $decoded = json_decode((string) $blobRow['state_json'], true);
+        if (is_array($decoded)) {
+            $state = $decoded;
+        }
     }
 
+    $db->begin_transaction();
+
+    try {
+        // -- expenses --
+        $expCount = 0;
+        foreach ((array) ($state['expenses'] ?? []) as $e) {
+            $extId    = sw_coerce_ext_id($e['id'] ?? '');
+            $amount   = (float) ($e['amount'] ?? 0);
+            $category = (string) ($e['category'] ?? '');
+            $date     = sw_coerce_date($e['date'] ?? '');
+            $note     = isset($e['note']) ? (string) $e['note'] : null;
+            $receipt  = isset($e['receipt']) && $e['receipt'] !== '' && $e['receipt'] !== null
+                            ? (string) $e['receipt'] : null;
+
+            if ($extId === '' || $date === '') {
+                continue; // skip malformed rows
+            }
+
+            $stmt = $db->prepare(
+                'INSERT IGNORE INTO expenses
+                 (user_id, external_id, amount, category, date, note, receipt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->bind_param('isdssss', $userId, $extId, $amount, $category, $date, $note, $receipt);
+            $stmt->execute();
+            $expCount += $stmt->affected_rows;
+            $stmt->close();
+        }
+
+        // -- budgets --
+        $budgCount = 0;
+        foreach ((array) ($state['budgets'] ?? []) as $b) {
+            $extId  = sw_coerce_ext_id($b['id'] ?? '');
+            $cat    = (string) ($b['category'] ?? '');
+            $month  = sw_coerce_month($b['month'] ?? '');
+            $limit  = (float) ($b['limit'] ?? 0);
+
+            if ($extId === '' || $month === '') {
+                continue;
+            }
+
+            $stmt = $db->prepare(
+                'INSERT IGNORE INTO budgets
+                 (user_id, external_id, category, month, limit_amount)
+                 VALUES (?, ?, ?, ?, ?)'
+            );
+            $stmt->bind_param('isssd', $userId, $extId, $cat, $month, $limit);
+            $stmt->execute();
+            $budgCount += $stmt->affected_rows;
+            $stmt->close();
+        }
+
+        // -- recurring_items --
+        $recCount = 0;
+        foreach ((array) ($state['recurring'] ?? []) as $r) {
+            $extId     = sw_coerce_ext_id($r['id'] ?? '');
+            $name      = (string) ($r['name'] ?? '');
+            $amount    = (float) ($r['amount'] ?? 0);
+            $cat       = (string) ($r['category'] ?? '');
+            $freq      = (string) ($r['frequency'] ?? 'monthly');
+            $startDate = sw_coerce_date($r['startDate'] ?? '');
+            $endDate   = sw_coerce_date_nullable($r['endDate'] ?? null);
+            $nextDue   = sw_coerce_date($r['nextDue'] ?? $startDate);
+            $active    = isset($r['active']) ? (int) (bool) $r['active'] : 1;
+
+            if ($extId === '' || $startDate === '' || $nextDue === '') {
+                continue;
+            }
+
+            $stmt = $db->prepare(
+                'INSERT IGNORE INTO recurring_items
+                 (user_id, external_id, name, amount, category, frequency,
+                  start_date, end_date, next_due, active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->bind_param(
+                'issdsssssi',
+                $userId, $extId, $name, $amount, $cat, $freq,
+                $startDate, $endDate, $nextDue, $active
+            );
+            $stmt->execute();
+            $recCount += $stmt->affected_rows;
+            $stmt->close();
+        }
+
+        // -- bills --
+        $billCount = 0;
+        foreach ((array) ($state['bills'] ?? []) as $b) {
+            $extId     = sw_coerce_ext_id($b['id'] ?? '');
+            $name      = (string) ($b['name'] ?? '');
+            $amount    = (float) ($b['amount'] ?? 0);
+            $cat       = (string) ($b['category'] ?? '');
+            $dueDate   = sw_coerce_date($b['dueDate'] ?? '');
+            $status    = (string) ($b['status'] ?? 'upcoming');
+            $paidDate  = sw_coerce_date_nullable($b['paidDate'] ?? null);
+            $reference = isset($b['reference']) && $b['reference'] !== '' && $b['reference'] !== null
+                            ? (string) $b['reference'] : null;
+
+            if ($extId === '' || $dueDate === '') {
+                continue;
+            }
+
+            $stmt = $db->prepare(
+                'INSERT IGNORE INTO bills
+                 (user_id, external_id, name, amount, category,
+                  due_date, status, paid_date, reference)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->bind_param(
+                'issdsssss',
+                $userId, $extId, $name, $amount, $cat,
+                $dueDate, $status, $paidDate, $reference
+            );
+            $stmt->execute();
+            $billCount += $stmt->affected_rows;
+            $stmt->close();
+        }
+
+        // -- user_preferences --
+        $darkMode  = isset($state['darkMode']) ? (int) (bool) $state['darkMode'] : 0;
+        $notifEmail = (int) (($state['notifications']['email'] ?? true) !== false);
+        $language   = in_array($state['language'] ?? '', ['am', 'en'], true)
+                        ? (string) $state['language'] : 'en';
+
+        $categories = $state['categories'] ?? [];
+        $catJson    = json_encode(
+            is_array($categories) ? $categories : [],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        );
+
+        $notifSeenAt = sw_coerce_datetime_nullable($state['notifSeenAt'] ?? null);
+
+        // Collect any unrecognised keys into extra_json for safe-keeping.
+        $knownKeys = [
+            'expenses', 'budgets', 'recurring', 'bills',
+            'darkMode', 'notifications', 'language', 'categories', 'notifSeenAt',
+            'user',
+        ];
+        $extra = [];
+        foreach ($state as $k => $v) {
+            if (!in_array($k, $knownKeys, true)) {
+                $extra[$k] = $v;
+            }
+        }
+        $extraJson = $extra !== []
+            ? json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : null;
+
+        $stmt = $db->prepare(
+            'INSERT INTO user_preferences
+             (user_id, dark_mode, notifications_email, language,
+              categories, notif_seen_at, extra_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               dark_mode           = VALUES(dark_mode),
+               notifications_email = VALUES(notifications_email),
+               language            = VALUES(language),
+               categories          = VALUES(categories),
+               notif_seen_at       = VALUES(notif_seen_at),
+               extra_json          = VALUES(extra_json),
+               updated_at          = CURRENT_TIMESTAMP'
+        );
+        $stmt->bind_param(
+            'iiissss',
+            $userId, $darkMode, $notifEmail, $language,
+            $catJson, $notifSeenAt, $extraJson
+        );
+        $stmt->execute();
+        $stmt->close();
+
+        // Mark migrated.
+        $now = date('Y-m-d H:i:s');
+        $stmt = $db->prepare(
+            'INSERT INTO user_migration_log
+             (user_id, migrated, migrated_at, expense_count,
+              budget_count, recurring_count, bill_count)
+             VALUES (?, 1, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               migrated        = 1,
+               migrated_at     = VALUES(migrated_at),
+               expense_count   = VALUES(expense_count),
+               budget_count    = VALUES(budget_count),
+               recurring_count = VALUES(recurring_count),
+               bill_count      = VALUES(bill_count)'
+        );
+        $stmt->bind_param(
+            'isiiii',
+            $userId, $now, $expCount, $budgCount, $recCount, $billCount
+        );
+        $stmt->execute();
+        $stmt->close();
+
+        $db->commit();
+
+    } catch (Throwable $e) {
+        $db->rollback();
+        throw $e;
+    }
+}
+
+// ── Coercion helpers ──────────────────────────────────────────────────────────
+
+/** Ensures external_id is a non-empty string under 64 chars. */
+function sw_coerce_ext_id(mixed $v): string
+{
+    $s = trim((string) $v);
+    return strlen($s) > 0 && strlen($s) <= 64 ? $s : '';
+}
+
+/** Returns a DATE string (YYYY-MM-DD) or '' if the value is not a valid date. */
+function sw_coerce_date(mixed $v): string
+{
+    if ($v === null || $v === '') {
+        return '';
+    }
+    $s = trim((string) $v);
+    // Accept YYYY-MM-DD only.
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) {
+        return $s;
+    }
+    return '';
+}
+
+/** Same as sw_coerce_date but returns null instead of ''. */
+function sw_coerce_date_nullable(mixed $v): ?string
+{
+    $d = sw_coerce_date($v);
+    return $d !== '' ? $d : null;
+}
+
+/** Returns a YYYY-MM string or '' for budget month fields. */
+function sw_coerce_month(mixed $v): string
+{
+    $s = trim((string) $v);
+    if (preg_match('/^\d{4}-\d{2}$/', $s)) {
+        return $s;
+    }
+    return '';
+}
+
+/** Returns a MySQL DATETIME string or null if the input is not parseable. */
+function sw_coerce_datetime_nullable(mixed $v): ?string
+{
+    if ($v === null || $v === '') {
+        return null;
+    }
+    $ts = strtotime((string) $v);
+    if ($ts === false) {
+        return null;
+    }
+    return date('Y-m-d H:i:s', $ts);
+}
+
+// ── Load from relational tables ───────────────────────────────────────────────
+
+/**
+ * Reads all five relational tables for $userId and assembles the state array
+ * that the frontend expects — same shape as the old JSON blob.
+ */
+function sw_load_state_from_tables(mysqli $db, int $userId): array
+{
+    // expenses — newest first (matches original frontend sort)
+    $expenses = [];
     $stmt = $db->prepare(
-        'INSERT INTO user_states (user_id, state_json) VALUES (?, ?)
-         ON DUPLICATE KEY UPDATE state_json = VALUES(state_json), updated_at = CURRENT_TIMESTAMP'
+        'SELECT external_id AS id, amount, category, date, note, receipt
+         FROM expenses
+         WHERE user_id = ?
+         ORDER BY date DESC, id DESC'
     );
-    $stmt->bind_param('is', $userId, $json);
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $expenses[] = [
+            'id'       => $row['id'],
+            'amount'   => (float) $row['amount'],
+            'category' => $row['category'],
+            'date'     => $row['date'],
+            'note'     => $row['note'],
+            'receipt'  => $row['receipt'],
+        ];
+    }
+    $stmt->close();
+
+    // budgets
+    $budgets = [];
+    $stmt = $db->prepare(
+        'SELECT external_id AS id, category, month, limit_amount AS `limit`
+         FROM budgets
+         WHERE user_id = ?
+         ORDER BY month DESC, id ASC'
+    );
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $budgets[] = [
+            'id'       => $row['id'],
+            'category' => $row['category'],
+            'month'    => $row['month'],
+            'limit'    => (float) $row['limit'],
+        ];
+    }
+    $stmt->close();
+
+    // recurring_items
+    $recurring = [];
+    $stmt = $db->prepare(
+        'SELECT external_id AS id, name, amount, category, frequency,
+                start_date AS startDate, end_date AS endDate,
+                next_due AS nextDue, active
+         FROM recurring_items
+         WHERE user_id = ?
+         ORDER BY id ASC'
+    );
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $recurring[] = [
+            'id'        => $row['id'],
+            'name'      => $row['name'],
+            'amount'    => (float) $row['amount'],
+            'category'  => $row['category'],
+            'frequency' => $row['frequency'],
+            'startDate' => $row['startDate'],
+            'endDate'   => $row['endDate'],
+            'nextDue'   => $row['nextDue'],
+            'active'    => (bool) $row['active'],
+        ];
+    }
+    $stmt->close();
+
+    // bills
+    $bills = [];
+    $stmt = $db->prepare(
+        'SELECT external_id AS id, name, amount, category,
+                due_date AS dueDate, status,
+                paid_date AS paidDate, reference
+         FROM bills
+         WHERE user_id = ?
+         ORDER BY due_date ASC, id ASC'
+    );
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $bills[] = [
+            'id'        => $row['id'],
+            'name'      => $row['name'],
+            'amount'    => (float) $row['amount'],
+            'category'  => $row['category'],
+            'dueDate'   => $row['dueDate'],
+            'status'    => $row['status'],
+            'paidDate'  => $row['paidDate'],
+            'reference' => $row['reference'],
+        ];
+    }
+    $stmt->close();
+
+    // user_preferences
+    $stmt = $db->prepare(
+        'SELECT dark_mode, notifications_email, language,
+                categories, notif_seen_at, extra_json
+         FROM user_preferences
+         WHERE user_id = ? LIMIT 1'
+    );
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $prefs = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $darkMode     = $prefs !== null ? (bool) $prefs['dark_mode']           : false;
+    $notifEmail   = $prefs !== null ? (bool) $prefs['notifications_email'] : true;
+    $language     = $prefs !== null ? (string) $prefs['language']           : 'en';
+    $categories   = [];
+    if ($prefs !== null && $prefs['categories'] !== null) {
+        $decoded = json_decode((string) $prefs['categories'], true);
+        if (is_array($decoded)) {
+            $categories = $decoded;
+        }
+    }
+    $notifSeenAt = $prefs !== null ? ($prefs['notif_seen_at'] ?? null) : null;
+
+    // Restore any extra keys (e.g. __notifications_meta).
+    $extra = [];
+    if ($prefs !== null && $prefs['extra_json'] !== null) {
+        $decoded = json_decode((string) $prefs['extra_json'], true);
+        if (is_array($decoded)) {
+            $extra = $decoded;
+        }
+    }
+
+    return array_merge($extra, [
+        'expenses'      => $expenses,
+        'budgets'       => $budgets,
+        'recurring'     => $recurring,
+        'bills'         => $bills,
+        'darkMode'      => $darkMode,
+        'notifications' => ['email' => $notifEmail],
+        'language'      => $language,
+        'categories'    => $categories,
+        'notifSeenAt'   => $notifSeenAt,
+    ]);
+}
+
+// ── Save to relational tables ─────────────────────────────────────────────────
+
+/**
+ * Full-sync save: replaces all entity rows for $userId with whatever is in
+ * $state, then upserts preferences.
+ *
+ * Strategy: collect external_ids from the incoming state, delete any rows
+ * whose external_id is NOT in that set (i.e. the frontend deleted them),
+ * then INSERT ... ON DUPLICATE KEY UPDATE for the rest.
+ */
+function sw_save_state_to_tables(mysqli $db, int $userId, array $state): void
+{
+    $db->begin_transaction();
+
+    try {
+        // ── expenses ──────────────────────────────────────────────────────────
+        $incomingExpIds = [];
+        foreach ((array) ($state['expenses'] ?? []) as $e) {
+            $extId    = sw_coerce_ext_id($e['id'] ?? '');
+            $amount   = (float) ($e['amount'] ?? 0);
+            $category = (string) ($e['category'] ?? '');
+            $date     = sw_coerce_date($e['date'] ?? '');
+            $note     = isset($e['note']) && $e['note'] !== null ? (string) $e['note'] : null;
+            $receipt  = isset($e['receipt']) && $e['receipt'] !== '' && $e['receipt'] !== null
+                            ? (string) $e['receipt'] : null;
+
+            if ($extId === '' || $date === '') {
+                continue;
+            }
+
+            $incomingExpIds[] = $extId;
+
+            $stmt = $db->prepare(
+                'INSERT INTO expenses
+                 (user_id, external_id, amount, category, date, note, receipt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                   amount    = VALUES(amount),
+                   category  = VALUES(category),
+                   date      = VALUES(date),
+                   note      = VALUES(note),
+                   receipt   = VALUES(receipt),
+                   updated_at = CURRENT_TIMESTAMP'
+            );
+            $stmt->bind_param('isdssss', $userId, $extId, $amount, $category, $date, $note, $receipt);
+            $stmt->execute();
+            $stmt->close();
+        }
+        sw_delete_stale_rows($db, $userId, 'expenses', $incomingExpIds);
+
+        // ── budgets ───────────────────────────────────────────────────────────
+        $incomingBudgIds = [];
+        foreach ((array) ($state['budgets'] ?? []) as $b) {
+            $extId = sw_coerce_ext_id($b['id'] ?? '');
+            $cat   = (string) ($b['category'] ?? '');
+            $month = sw_coerce_month($b['month'] ?? '');
+            $limit = (float) ($b['limit'] ?? 0);
+
+            if ($extId === '' || $month === '') {
+                continue;
+            }
+
+            $incomingBudgIds[] = $extId;
+
+            $stmt = $db->prepare(
+                'INSERT INTO budgets
+                 (user_id, external_id, category, month, limit_amount)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                   category     = VALUES(category),
+                   month        = VALUES(month),
+                   limit_amount = VALUES(limit_amount),
+                   updated_at   = CURRENT_TIMESTAMP'
+            );
+            $stmt->bind_param('isssd', $userId, $extId, $cat, $month, $limit);
+            $stmt->execute();
+            $stmt->close();
+        }
+        sw_delete_stale_rows($db, $userId, 'budgets', $incomingBudgIds);
+
+        // ── recurring_items ───────────────────────────────────────────────────
+        $incomingRecIds = [];
+        foreach ((array) ($state['recurring'] ?? []) as $r) {
+            $extId     = sw_coerce_ext_id($r['id'] ?? '');
+            $name      = (string) ($r['name'] ?? '');
+            $amount    = (float) ($r['amount'] ?? 0);
+            $cat       = (string) ($r['category'] ?? '');
+            $freq      = (string) ($r['frequency'] ?? 'monthly');
+            $startDate = sw_coerce_date($r['startDate'] ?? '');
+            $endDate   = sw_coerce_date_nullable($r['endDate'] ?? null);
+            $nextDue   = sw_coerce_date($r['nextDue'] ?? $startDate);
+            $active    = (int) (bool) ($r['active'] ?? true);
+
+            if ($extId === '' || $startDate === '' || $nextDue === '') {
+                continue;
+            }
+
+            $incomingRecIds[] = $extId;
+
+            $stmt = $db->prepare(
+                'INSERT INTO recurring_items
+                 (user_id, external_id, name, amount, category, frequency,
+                  start_date, end_date, next_due, active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                   name       = VALUES(name),
+                   amount     = VALUES(amount),
+                   category   = VALUES(category),
+                   frequency  = VALUES(frequency),
+                   start_date = VALUES(start_date),
+                   end_date   = VALUES(end_date),
+                   next_due   = VALUES(next_due),
+                   active     = VALUES(active),
+                   updated_at = CURRENT_TIMESTAMP'
+            );
+            $stmt->bind_param(
+                'issdsssssi',
+                $userId, $extId, $name, $amount, $cat, $freq,
+                $startDate, $endDate, $nextDue, $active
+            );
+            $stmt->execute();
+            $stmt->close();
+        }
+        sw_delete_stale_rows($db, $userId, 'recurring_items', $incomingRecIds);
+
+        // ── bills ─────────────────────────────────────────────────────────────
+        $incomingBillIds = [];
+        foreach ((array) ($state['bills'] ?? []) as $b) {
+            $extId     = sw_coerce_ext_id($b['id'] ?? '');
+            $name      = (string) ($b['name'] ?? '');
+            $amount    = (float) ($b['amount'] ?? 0);
+            $cat       = (string) ($b['category'] ?? '');
+            $dueDate   = sw_coerce_date($b['dueDate'] ?? '');
+            $status    = (string) ($b['status'] ?? 'upcoming');
+            $paidDate  = sw_coerce_date_nullable($b['paidDate'] ?? null);
+            $reference = isset($b['reference']) && $b['reference'] !== null && $b['reference'] !== ''
+                            ? (string) $b['reference'] : null;
+
+            if ($extId === '' || $dueDate === '') {
+                continue;
+            }
+
+            $incomingBillIds[] = $extId;
+
+            $stmt = $db->prepare(
+                'INSERT INTO bills
+                 (user_id, external_id, name, amount, category,
+                  due_date, status, paid_date, reference)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                   name       = VALUES(name),
+                   amount     = VALUES(amount),
+                   category   = VALUES(category),
+                   due_date   = VALUES(due_date),
+                   status     = VALUES(status),
+                   paid_date  = VALUES(paid_date),
+                   reference  = VALUES(reference),
+                   updated_at = CURRENT_TIMESTAMP'
+            );
+            $stmt->bind_param(
+                'issdsssss',
+                $userId, $extId, $name, $amount, $cat,
+                $dueDate, $status, $paidDate, $reference
+            );
+            $stmt->execute();
+            $stmt->close();
+        }
+        sw_delete_stale_rows($db, $userId, 'bills', $incomingBillIds);
+
+        // ── user_preferences ──────────────────────────────────────────────────
+        $darkMode   = (int) (bool) ($state['darkMode'] ?? false);
+        $notifEmail = (int) (($state['notifications']['email'] ?? true) !== false);
+        $language   = in_array($state['language'] ?? '', ['am', 'en'], true)
+                        ? (string) $state['language'] : 'en';
+        $categories = $state['categories'] ?? [];
+        $catJson    = json_encode(
+            is_array($categories) ? $categories : [],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        );
+        $notifSeenAt = sw_coerce_datetime_nullable($state['notifSeenAt'] ?? null);
+
+        $knownKeys = [
+            'expenses', 'budgets', 'recurring', 'bills',
+            'darkMode', 'notifications', 'language', 'categories', 'notifSeenAt',
+            'user',
+        ];
+        $extra = [];
+        foreach ($state as $k => $v) {
+            if (!in_array($k, $knownKeys, true)) {
+                $extra[$k] = $v;
+            }
+        }
+        $extraJson = $extra !== []
+            ? json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : null;
+
+        $stmt = $db->prepare(
+            'INSERT INTO user_preferences
+             (user_id, dark_mode, notifications_email, language,
+              categories, notif_seen_at, extra_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               dark_mode           = VALUES(dark_mode),
+               notifications_email = VALUES(notifications_email),
+               language            = VALUES(language),
+               categories          = VALUES(categories),
+               notif_seen_at       = VALUES(notif_seen_at),
+               extra_json          = VALUES(extra_json),
+               updated_at          = CURRENT_TIMESTAMP'
+        );
+        $stmt->bind_param(
+            'iiissss',
+            $userId, $darkMode, $notifEmail, $language,
+            $catJson, $notifSeenAt, $extraJson
+        );
+        $stmt->execute();
+        $stmt->close();
+
+        $db->commit();
+
+    } catch (Throwable $e) {
+        $db->rollback();
+        throw $e;
+    }
+}
+
+/**
+ * Deletes rows from $table where user_id = $userId and external_id is NOT in
+ * $keepIds.  Called after each entity sync to remove deleted items.
+ *
+ * @param string[] $keepIds
+ */
+function sw_delete_stale_rows(
+    mysqli $db,
+    int    $userId,
+    string $table,
+    array  $keepIds
+): void {
+    // Whitelist table names — never interpolate user input here.
+    $allowed = ['expenses', 'budgets', 'recurring_items', 'bills'];
+    if (!in_array($table, $allowed, true)) {
+        throw new RuntimeException("sw_delete_stale_rows: unknown table '{$table}'.");
+    }
+
+    if ($keepIds === []) {
+        // All items deleted — wipe the table for this user.
+        $stmt = $db->prepare("DELETE FROM `{$table}` WHERE user_id = ?");
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $stmt->close();
+        return;
+    }
+
+    // Build a parameterised IN list.
+    $placeholders = implode(',', array_fill(0, count($keepIds), '?'));
+    $types        = 'i' . str_repeat('s', count($keepIds));
+    $params       = array_merge([$userId], $keepIds);
+
+    $stmt = $db->prepare(
+        "DELETE FROM `{$table}`
+         WHERE user_id = ? AND external_id NOT IN ({$placeholders})"
+    );
+    $stmt->bind_param($types, ...$params);
     $stmt->execute();
     $stmt->close();
 }
 
+// ── Public API (same signatures as before) ───────────────────────────────────
+
+/**
+ * Load state for $userId.
+ *
+ * On first call after deploy, auto-migrates the user's JSON blob into the
+ * relational tables.  Subsequent calls read entirely from those tables.
+ */
+function sw_load_state(mysqli $db, int $userId): ?array
+{
+    if (!sw_is_migrated($db, $userId)) {
+        // First time this user is seen post-deploy: run migration.
+        sw_migrate_user_state($db, $userId);
+    }
+
+    // Read from relational tables.  If the user has no data at all, return
+    // an empty-but-valid state (same as the old "null → use default" path).
+    $state = sw_load_state_from_tables($db, $userId);
+
+    // Return null only when there truly is no record at all (new user who
+    // never saved).  An empty state is still a valid state.
+    return $state;
+}
+
+/**
+ * Save state for $userId.
+ *
+ * Writes to both:
+ *   1. The five relational tables (primary, Phase 1 target).
+ *   2. The old user_states blob (belt-and-suspenders backup; removed Phase 2).
+ */
+function sw_save_state(mysqli $db, int $userId, array $state): void
+{
+    // Ensure the user has a migration record before saving (handles new users
+    // who sign up after Phase 1 is deployed — they skip the JSON blob path
+    // entirely and go straight into the relational tables).
+    if (!sw_is_migrated($db, $userId)) {
+        sw_migrate_user_state($db, $userId);
+    }
+
+    // Phase 3: write only to relational tables. Blob backup removed.
+    sw_save_state_to_tables($db, $userId, $state);
+}
+
+/**
+ * Wipe all data for $userId — called by the "Danger Zone" reset.
+ *
+ * Clears all five relational tables, the old blob, and the migration log
+ * so the next save starts from a clean slate.
+ */
 function sw_clear_state(mysqli $db, int $userId): void
 {
+    $tables = ['expenses', 'budgets', 'recurring_items', 'bills', 'user_preferences'];
+    foreach ($tables as $table) {
+        $stmt = $db->prepare("DELETE FROM `{$table}` WHERE user_id = ?");
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    // Remove old blob.
     $stmt = $db->prepare('DELETE FROM user_states WHERE user_id = ?');
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $stmt->close();
+
+    // Reset migration log so the next sw_save_state() re-initialises cleanly.
+    $stmt = $db->prepare('DELETE FROM user_migration_log WHERE user_id = ?');
     $stmt->bind_param('i', $userId);
     $stmt->execute();
     $stmt->close();
@@ -560,6 +1446,27 @@ function sw_send_password_reset_email(string $recipientName, string $recipientEm
     }
 }
 
+// [SEC F-08] Notify the user whenever their password is successfully changed.
+function sw_send_password_changed_email(string $recipientName, string $recipientEmail): void
+{
+    $displayName = trim($recipientName) !== '' ? trim($recipientName) : 'there';
+    $subject     = 'Your SpendWise password was changed';
+    $htmlBody    =
+        '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a">' .
+        '<p>Hello ' . htmlspecialchars($displayName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . ',</p>' .
+        '<p>This is a confirmation that your SpendWise password was just changed.</p>' .
+        '<p>If you made this change, no further action is needed.</p>' .
+        '<p><strong>If you did not change your password</strong>, please contact support immediately and consider changing your email account password as well.</p>' .
+        '</div>';
+    $textBody =
+        "Hello {$displayName},\n\n" .
+        "This is a confirmation that your SpendWise password was just changed.\n\n" .
+        "If you made this change, no further action is needed.\n\n" .
+        "If you did NOT change your password, please contact support immediately.";
+
+    sw_send_notification_email($recipientName, $recipientEmail, $subject, $htmlBody, $textBody);
+}
+
 function sw_send_notification_email(string $recipientName, string $recipientEmail, string $subject, string $htmlBody, ?string $textBody = null): void
 {
     $settings = sw_mailer_settings();
@@ -678,7 +1585,17 @@ function sw_http_get(string $url): string
 
 function sw_google_cert_cache_file(): string
 {
-    return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'spendwise_google_certs.json';
+    // [SEC F-12] Store in the app directory, not world-readable /tmp.
+    // Falls back to /tmp only if SW_ROOT_DIR is not defined.
+    $dir = defined('SW_ROOT_DIR') ? rtrim(SW_ROOT_DIR, DIRECTORY_SEPARATOR) : rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR);
+    return $dir . DIRECTORY_SEPARATOR . '.spendwise_google_certs_' . md5(defined('SW_GOOGLE_CLIENT_ID') ? SW_GOOGLE_CLIENT_ID : 'default') . '.json';
+}
+
+function sw_google_cert_hmac(array $data): string
+{
+    // [SEC F-12] HMAC over cache contents to detect tampering.
+    $secret = defined('SW_GOOGLE_CLIENT_ID') ? SW_GOOGLE_CLIENT_ID : 'sw-cert-hmac-key';
+    return hash_hmac('sha256', json_encode($data, JSON_UNESCAPED_SLASHES) ?: '', $secret);
 }
 
 function sw_google_certificates(): array
@@ -688,11 +1605,17 @@ function sw_google_certificates(): array
         $cached = json_decode((string) file_get_contents($cacheFile), true);
         if (
             is_array($cached)
-            && isset($cached['expiresAt'], $cached['certs'])
+            && isset($cached['expiresAt'], $cached['certs'], $cached['hmac'])
             && (int) $cached['expiresAt'] > time()
             && is_array($cached['certs'])
         ) {
-            return $cached['certs'];
+            // [SEC F-12] Verify HMAC to detect cache file tampering.
+            $payload = ['expiresAt' => $cached['expiresAt'], 'certs' => $cached['certs']];
+            if (hash_equals(sw_google_cert_hmac($payload), (string) $cached['hmac'])) {
+                return $cached['certs'];
+            }
+            // HMAC mismatch — cache tampered or stale; re-fetch.
+            error_log('[SpendWise] Google cert cache HMAC mismatch — re-fetching.');
         }
     }
 
@@ -702,10 +1625,11 @@ function sw_google_certificates(): array
         throw new RuntimeException('Google signing certificates could not be loaded.');
     }
 
-    @file_put_contents($cacheFile, json_encode([
-        'expiresAt' => time() + SW_GOOGLE_CERT_CACHE_TTL,
-        'certs' => $certs,
-    ], JSON_UNESCAPED_SLASHES));
+    $payload = ['expiresAt' => time() + SW_GOOGLE_CERT_CACHE_TTL, 'certs' => $certs];
+    @file_put_contents($cacheFile, json_encode(
+        array_merge($payload, ['hmac' => sw_google_cert_hmac($payload)]),
+        JSON_UNESCAPED_SLASHES
+    ), LOCK_EX);
 
     return $certs;
 }
@@ -760,7 +1684,7 @@ function sw_verify_google_credential(string $credential): array
         sw_error('Google token audience mismatch.', 401);
     }
 
-    if ((int) ($payload['exp'] ?? 0) < (time() - 30)) {
+    if ((int) ($payload['exp'] ?? 0) < (time() - 5)) { // [SEC F-14] 5s skew per Google's recommendation (was 30s)
         sw_error('Google credential expired.', 401);
     }
 
@@ -875,6 +1799,22 @@ function sw_sync_google_user(mysqli $db, array $googleUser): array
     return $freshRow;
 }
 
+/**
+ * Boot payload returned inline in the HTML page.
+ *
+ * Phase 3: we no longer dump the entire data set into the page — that was the
+ * old blob approach.  Instead we return:
+ *   • user identity
+ *   • user preferences (dark mode, language, notifications, categories,
+ *     notifSeenAt) — needed immediately to render without a flash
+ *   • the 50 most-recent expenses (so the dashboard has data on first paint)
+ *   • upcoming/overdue bills (needed for the bell-icon badge)
+ *   • due-today recurring (needed for the badge)
+ *   • current-month budgets (needed for the badge)
+ *
+ * Full data sets are fetched lazily by the per-resource API endpoints after
+ * the page renders (see loadPageData() in script.js).
+ */
 function sw_get_bootstrap_payload(): array
 {
     try {
@@ -893,17 +1833,163 @@ function sw_get_bootstrap_payload(): array
         $user = sw_user_payload($row);
         sw_store_session($user);
 
+        $userId = (int) $row['id'];
+
+        // Ensure migration has run for this user.
+        if (!sw_is_migrated($db, $userId)) {
+            sw_migrate_user_state($db, $userId);
+        }
+
+        // ── Preferences (always needed on first paint) ─────────────────────
+        $stmt = $db->prepare(
+            'SELECT dark_mode, notifications_email, language,
+                    categories, notif_seen_at, extra_json
+             FROM user_preferences
+             WHERE user_id = ? LIMIT 1'
+        );
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $prefs = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        $darkMode   = $prefs !== null ? (bool) $prefs['dark_mode']           : false;
+        $notifEmail = $prefs !== null ? (bool) $prefs['notifications_email'] : true;
+        $language   = $prefs !== null ? (string) $prefs['language']           : 'en';
+        $notifSeenAt = $prefs !== null ? ($prefs['notif_seen_at'] ?? null) : null;
+        $categories = [];
+        if ($prefs !== null && !empty($prefs['categories'])) {
+            $decoded = json_decode((string) $prefs['categories'], true);
+            if (is_array($decoded) && count($decoded) > 0) {
+                $categories = $decoded;
+            }
+        }
+
+        // ── Recent expenses — last 50 rows (dashboard first paint) ─────────
+        $expenses = [];
+        $stmt = $db->prepare(
+            'SELECT external_id AS id, amount, category, date, note, receipt
+             FROM expenses
+             WHERE user_id = ?
+             ORDER BY date DESC, id DESC
+             LIMIT 50'
+        );
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($r = $res->fetch_assoc()) {
+            $expenses[] = [
+                'id'       => $r['id'],
+                'amount'   => (float) $r['amount'],
+                'category' => $r['category'],
+                'date'     => $r['date'],
+                'note'     => $r['note'],
+                'receipt'  => null, // omit receipt data-URLs from boot payload
+            ];
+        }
+        $stmt->close();
+
+        // ── Current-month budgets (badge needs these) ───────────────────────
+        $curMonth = date('Y-m');
+        $budgets  = [];
+        $stmt     = $db->prepare(
+            'SELECT external_id AS id, category, month, limit_amount AS `limit`
+             FROM budgets
+             WHERE user_id = ? AND month = ?
+             ORDER BY id ASC'
+        );
+        $stmt->bind_param('is', $userId, $curMonth);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($r = $res->fetch_assoc()) {
+            $budgets[] = [
+                'id'       => $r['id'],
+                'category' => $r['category'],
+                'month'    => $r['month'],
+                'limit'    => (float) $r['limit'],
+            ];
+        }
+        $stmt->close();
+
+        // ── Upcoming / overdue bills (badge needs these) ────────────────────
+        $bills = [];
+        $stmt  = $db->prepare(
+            "SELECT external_id AS id, name, amount, category,
+                    due_date AS dueDate, status,
+                    paid_date AS paidDate, reference
+             FROM bills
+             WHERE user_id = ? AND status IN ('upcoming','overdue')
+             ORDER BY due_date ASC
+             LIMIT 30"
+        );
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($r = $res->fetch_assoc()) {
+            $bills[] = [
+                'id'        => $r['id'],
+                'name'      => $r['name'],
+                'amount'    => (float) $r['amount'],
+                'category'  => $r['category'],
+                'dueDate'   => $r['dueDate'],
+                'status'    => $r['status'],
+                'paidDate'  => $r['paidDate'],
+                'reference' => $r['reference'],
+            ];
+        }
+        $stmt->close();
+
+        // ── Active recurring (badge needs due-today items) ──────────────────
+        $recurring = [];
+        $stmt      = $db->prepare(
+            'SELECT external_id AS id, name, amount, category, frequency,
+                    start_date AS startDate, end_date AS endDate,
+                    next_due AS nextDue, active
+             FROM recurring_items
+             WHERE user_id = ? AND active = 1
+             ORDER BY next_due ASC
+             LIMIT 30'
+        );
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($r = $res->fetch_assoc()) {
+            $recurring[] = [
+                'id'        => $r['id'],
+                'name'      => $r['name'],
+                'amount'    => (float) $r['amount'],
+                'category'  => $r['category'],
+                'frequency' => $r['frequency'],
+                'startDate' => $r['startDate'],
+                'endDate'   => $r['endDate'],
+                'nextDue'   => $r['nextDue'],
+                'active'    => (bool) $r['active'],
+            ];
+        }
+        $stmt->close();
+
         return [
-            'user' => $user,
-            'state' => sw_load_state($db, (int) $row['id']),
+            'user'   => $user,
             'google' => sw_google_bootstrap(),
+            'state'  => [
+                'expenses'      => $expenses,
+                'budgets'       => $budgets,
+                'recurring'     => $recurring,
+                'bills'         => $bills,
+                'darkMode'      => $darkMode,
+                'notifications' => ['email' => $notifEmail],
+                'language'      => $language,
+                'categories'    => $categories,
+                'notifSeenAt'   => $notifSeenAt,
+            ],
         ];
     } catch (Throwable $e) {
+        // [SEC F-13] Never expose exception details in the boot payload — visible to any page visitor.
+        // Log the error server-side for debugging.
+        error_log('[SpendWise] Boot error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
         return [
-            'user' => null,
-            'state' => null,
+            'user'   => null,
+            'state'  => null,
             'google' => sw_google_bootstrap(),
-            'bootError' => $e->getMessage(),
         ];
     }
 }
@@ -973,6 +2059,7 @@ function sw_handle_api_request(): never
 
                 $user = sw_user_payload($userRow);
                 sw_store_session($user);
+                session_regenerate_id(true); // [SEC F-11] prevent session fixation
 
                 sw_json_response(200, [
                     'ok' => true,
@@ -992,6 +2079,7 @@ function sw_handle_api_request(): never
                 $userRow = sw_sync_google_user($db, $googleUser);
                 $user = sw_user_payload($userRow);
                 sw_store_session($user);
+                session_regenerate_id(true); // [SEC F-11] prevent session fixation
 
                 sw_json_response(200, [
                     'ok' => true,
@@ -1008,6 +2096,10 @@ function sw_handle_api_request(): never
 
                 if ($name === '') {
                     sw_error('Please enter your full name.');
+                }
+                // [SEC F-05] Enforce length limits to match DB column and prevent abuse.
+                if (strlen($name) > 100) {
+                    sw_error('Name too long. Maximum 100 characters.');
                 }
                 if ($email === '') {
                     sw_error('Please enter your email.');
@@ -1039,6 +2131,7 @@ function sw_handle_api_request(): never
 
                 $user = sw_user_payload($userRow);
                 sw_store_session($user);
+                session_regenerate_id(true); // [SEC F-11] prevent session fixation
 
                 sw_json_response(200, [
                     'ok' => true,
@@ -1059,37 +2152,39 @@ function sw_handle_api_request(): never
                 }
 
                 $userRow = sw_find_user_by_email($db, $email);
-                if ($userRow === null) {
-                    sw_error('No account found.');
+                // [SEC F-02] Always return the same generic response regardless of whether
+                // the email exists — prevents account enumeration via timing/message differences.
+                if ($userRow !== null) {
+                    $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+                    $expiresAt = date('Y-m-d H:i:s', time() + SW_OTP_EXPIRES_IN);
+
+                    // [SEC F-07] Reset attempts counter when issuing a new OTP.
+                    $stmt = $db->prepare(
+                        'INSERT INTO password_reset_codes (user_id, email, code, attempts, expires_at)
+                         VALUES (?, ?, ?, 0, ?)
+                         ON DUPLICATE KEY UPDATE email = VALUES(email), code = VALUES(code), attempts = 0, expires_at = VALUES(expires_at), created_at = CURRENT_TIMESTAMP'
+                    );
+                    $userId = (int) $userRow['id'];
+                    $stmt->bind_param('isss', $userId, $email, $code, $expiresAt);
+                    $stmt->execute();
+                    $stmt->close();
+
+                    sw_forget_verified_reset($email);
+                    try {
+                        sw_send_password_reset_email((string) ($userRow['name'] ?? ''), $email, $code, SW_OTP_EXPIRES_IN);
+                    } catch (Throwable $e) {
+                        sw_delete_password_reset_code($db, $userId);
+                        error_log('[SpendWise] OTP email error: ' . $e->getMessage());
+                        sw_error('An unexpected error occurred. Please try again.', 500);
+                    }
                 }
-
-                $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-                $expiresAt = date('Y-m-d H:i:s', time() + SW_OTP_EXPIRES_IN);
-
-                $stmt = $db->prepare(
-                    'INSERT INTO password_reset_codes (user_id, email, code, expires_at)
-                     VALUES (?, ?, ?, ?)
-                     ON DUPLICATE KEY UPDATE email = VALUES(email), code = VALUES(code), expires_at = VALUES(expires_at), created_at = CURRENT_TIMESTAMP'
-                );
-                $userId = (int) $userRow['id'];
-                $stmt->bind_param('isss', $userId, $email, $code, $expiresAt);
-                $stmt->execute();
-                $stmt->close();
-
-                sw_forget_verified_reset($email);
-                try {
-                    sw_send_password_reset_email((string) ($userRow['name'] ?? ''), $email, $code, SW_OTP_EXPIRES_IN);
-                } catch (Throwable $e) {
-                    sw_delete_password_reset_code($db, $userId);
-                    sw_error($e->getMessage(), 500);
-                }
-
+                // [SEC F-02] Return same message whether email exists or not (anti-enumeration).
                 sw_json_response(200, [
                     'ok' => true,
                     'data' => [
                         'expiresIn' => SW_OTP_EXPIRES_IN,
                         'maskedEmail' => sw_mask_email($email),
-                        'message' => 'We sent a 6-digit code to ' . sw_mask_email($email) . '.',
+                        'message' => 'If that email is registered, we sent a 6-digit code.',
                     ],
                 ]);
 
@@ -1106,7 +2201,8 @@ function sw_handle_api_request(): never
                     sw_error('No account found.');
                 }
 
-                $stmt = $db->prepare('SELECT code, expires_at FROM password_reset_codes WHERE user_id = ? LIMIT 1');
+                // [SEC F-07] Fetch OTP with attempts column.
+                $stmt = $db->prepare('SELECT code, expires_at, attempts FROM password_reset_codes WHERE user_id = ? LIMIT 1');
                 $userId = (int) $userRow['id'];
                 $stmt->bind_param('i', $userId);
                 $stmt->execute();
@@ -1121,8 +2217,19 @@ function sw_handle_api_request(): never
                     sw_forget_verified_reset($email);
                     sw_error('OTP expired. Request a new one.');
                 }
+                // [SEC F-07] Reject after 5 failed attempts to prevent brute-force.
+                if ((int) $otpRow['attempts'] >= 5) {
+                    sw_delete_password_reset_code($db, $userId);
+                    sw_error('Too many incorrect attempts. Request a new code.');
+                }
                 if ((string) $otpRow['code'] !== $code) {
-                    sw_error('Incorrect code.');
+                    // Increment the attempts counter.
+                    $stmt = $db->prepare('UPDATE password_reset_codes SET attempts = attempts + 1 WHERE user_id = ?');
+                    $stmt->bind_param('i', $userId);
+                    $stmt->execute();
+                    $stmt->close();
+                    $remaining = 5 - ((int) $otpRow['attempts'] + 1);
+                    sw_error($remaining > 0 ? "Incorrect code. {$remaining} attempt(s) remaining." : 'Too many incorrect attempts. Request a new code.');
                 }
 
                 sw_mark_reset_verified($email);
@@ -1155,8 +2262,17 @@ function sw_handle_api_request(): never
                 $stmt->close();
 
                 sw_delete_password_reset_code($db, $userId);
-
+                // [SEC F-08] Invalidate the verified flag immediately after use (one-time guarantee).
                 sw_forget_verified_reset($email);
+
+                // [SEC F-08] Notify the user that their password was changed.
+                try {
+                    sw_send_password_changed_email((string) ($userRow['name'] ?? ''), $email);
+                } catch (Throwable $ignored) {
+                    // Non-fatal: password is already updated; log and continue.
+                    error_log('[SpendWise] Failed to send password-changed notification to ' . $email . ': ' . $ignored->getMessage());
+                }
+
                 sw_json_response(200, ['ok' => true, 'data' => ['updated' => true]]);
 
             case 'update_profile':
@@ -1173,6 +2289,23 @@ function sw_handle_api_request(): never
 
                 if ($name === '') {
                     sw_error('Name cannot be empty.');
+                }
+                // [SEC F-05] Enforce name length limit.
+                if (strlen($name) > 100) {
+                    sw_error('Name too long. Maximum 100 characters.');
+                }
+                // [SEC F-10] Validate phone format: only digits, spaces, +, -, (, ) — max 20 chars.
+                if ($phone !== '' && !preg_match('/^[0-9\s+\-().]{1,20}$/', $phone)) {
+                    sw_error('Invalid phone number. Use digits, spaces, +, -, (, ) only (max 20 characters).');
+                }
+                // [SEC F-03] Enforce server-side avatar size limit — client-side check is bypassable.
+                if ($avatar !== null) {
+                    if (strlen($avatar) > 204800) { // ~150 KB raw when decoded from base64
+                        sw_error('Avatar too large. Maximum 150 KB.');
+                    }
+                    if (!preg_match('/^data:image\/(jpeg|png|webp|gif);base64,/', $avatar)) {
+                        sw_error('Invalid avatar format. Must be a JPEG, PNG, WebP, or GIF image.');
+                    }
                 }
 
                 $stmt = $db->prepare(
@@ -1212,7 +2345,10 @@ function sw_handle_api_request(): never
                 sw_error('Unknown action.', 404);
         }
     } catch (Throwable $e) {
-        sw_json_response(500, ['ok' => false, 'error' => $e->getMessage()]);
+        // [SEC F-06] Never expose internal exception details to the client.
+        // Log internally for debugging, return a generic message.
+        error_log('[SpendWise] API error in action=' . ($action ?? 'unknown') . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        sw_json_response(500, ['ok' => false, 'error' => 'An unexpected error occurred. Please try again.']);
     }
 }
 

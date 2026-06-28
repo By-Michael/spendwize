@@ -159,7 +159,7 @@ function buildCategoryField(categories,category,onChange,label='Category',errCls
     else{customWrap.style.display='none';onChange(sel.value)}
   }
   sel.addEventListener('change',sync);
-  customIn.addEventListener('input',()=>{customIn.value=sanitizeText(customIn.value);if(sel.value==='Other')onChange(customIn.value.trim()||'Other')});
+  customIn.addEventListener('input',()=>{if(sel.value==='Other')onChange(customIn.value.trim()||'Other')});
   customWrap.appendChild(customIn);
   wrap.append(sel,customWrap);
   return wrap;
@@ -171,7 +171,7 @@ function buildBillCategoryField(category,onChange){
   BILL_CATS.forEach(c=>{const o=el('option',{value:c},tBillCat(c));if(c===category)o.selected=true;sel.appendChild(o)});
   const customWrap=el('div',{style:{display:category==='other'?'block':'none',marginTop:'.5rem'}});
   const customIn=el('input',{cls:'input',placeholder:'Enter bill type'});
-  customIn.addEventListener('input',()=>{customIn.value=sanitizeText(customIn.value);if(sel.value==='other')onChange('other')});
+  customIn.addEventListener('input',()=>{if(sel.value==='other')onChange('other')});
   sel.addEventListener('change',e=>{const v=e.target.value;customWrap.style.display=v==='other'?'block':'none';onChange(v)});
   customWrap.appendChild(customIn);
   wrap.append(sel,customWrap);
@@ -412,31 +412,7 @@ if(S.darkMode)document.documentElement.classList.add('dark');
 let PAGE='dashboard';
 let profileTab='account';
 let sidebarCollapsed=false;
-// ── Hash router ───────────────────────────────────────────────────────────
-const APP_PAGES=new Set(['dashboard','expenses','budgets','recurring','bills','reports','profile']);
-const AUTH_PAGES=new Set(['login','signup']);
-const VALID_PAGES=new Set([...APP_PAGES,'login','signup','landing']);
-
-function hashToPage(){
-  const h=window.location.hash.replace(/^#\/?/,'').toLowerCase().trim();
-  if(h===''||h==='landing')return 'landing';
-  if(AUTH_PAGES.has(h))return h;
-  return APP_PAGES.has(h)?h:'dashboard';
-}
-
-function navigate(page){
-  if(!VALID_PAGES.has(page))page='dashboard';
-  PAGE=page;
-  if(!AUTH_PAGES.has(page)&&page!=='landing'&&page!=='profile')profileTab='account';
-  const target=page==='landing'?'#/':'#/'+page;
-  if(window.location.hash!==target)history.pushState(null,'',target);
-  // Auth / landing pages bypass the app shell
-  if(page==='landing'){renderLanding();return}
-  if(page==='login'){renderLogin('signin');return}
-  if(page==='signup'){renderLogin('signup');return}
-  renderLayout();renderPage();
-}
-
+function navigate(page){PAGE=page;if(page!=='profile')profileTab='account';renderLayout();renderPage()}
 function closeExpModal(){document.getElementById('expense-modal-root').innerHTML='';renderPage()}
 
 // â•â•â•â•â•â• NAV CONFIG â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -568,8 +544,8 @@ function renderSidebar(){
   menuToggle.addEventListener('click',()=>{sidebarCollapsed=!sidebarCollapsed;renderSidebar()});
   sideHdr.appendChild(menuToggle);sb.appendChild(sideHdr);
   const addBtn=el('div',{style:{padding:'.75rem'}});
-  const btn=el('button',{cls:'btn-primary w-full',style:{justifyContent:'center',minHeight:'2.25rem'}});
-  if(sidebarCollapsed){btn.style.fontSize='1.25rem';btn.style.fontWeight='700';btn.style.lineHeight='1';btn.textContent='+';}else{btn.append(ic('plus-circle',16),' Add Expense');}
+  const btn=el('button',{cls:'btn-primary w-full',style:{justifyContent:'center'}});
+  btn.append(ic('plus-circle',16),sidebarCollapsed?'':' Add Expense');
   btn.addEventListener('click',()=>renderExpModal(null));addBtn.appendChild(btn);sb.appendChild(addBtn);
   const nav=el('nav',{style:{flex:1,padding:'0 .5rem',overflowY:'auto'}});
   NAV.forEach(({page,icon,label})=>{
@@ -706,7 +682,7 @@ function renderExpModal(editExp){
     // Note
     const noteWrap=el('div');noteWrap.appendChild(el('label',{cls:'label'},'Note (optional)'));
     const noteIn=el('input',{cls:'input',placeholder:'What was this for?'});noteIn.value=form.note;
-    applyInputSanitizer(noteIn,sanitizeText,v=>{form.note=v},null);noteWrap.appendChild(noteIn);body.appendChild(noteWrap);
+    noteIn.addEventListener('input',e=>{form.note=e.target.value});noteWrap.appendChild(noteIn);body.appendChild(noteWrap);
     // Receipt
     const recWrap=el('div');
     const recLblRow=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'.4rem'}});
@@ -802,236 +778,15 @@ function renderExpModal(editExp){
 }
 
 // â•â•â•â•â•â• LOGIN PAGE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// ══════ LANDING PAGE ════════════════════════════════════════════════════════
-function renderLanding(){
+function renderLogin(){
   const root=document.getElementById('app-root');root.innerHTML='';
-  root.innerHTML=`
-<div class="lnd-root">
-
-<!-- NAVBAR -->
-<header class="lnd-nav">
-  <div class="lnd-nav-inner">
-    <a href="#/" class="lnd-brand">
-      <img src="assets/spendwise-logo.png" alt="SpendWise logo">
-      <span><span class="lnd-sw">Spend</span><span class="lnd-wise">Wise</span></span>
-    </a>
-    <nav class="lnd-links" id="lnd-links">
-      <a href="#lnd-home">Home</a>
-      <a href="#lnd-about">About</a>
-      <a href="#lnd-features">Features</a>
-      <a href="#lnd-testimonials">Reviews</a>
-      <a href="#lnd-contact">Contact</a>
-    </nav>
-    <div class="lnd-nav-actions">
-      <button class="lnd-btn lnd-btn-ghost" id="lnd-signin-btn">Sign In</button>
-      <button class="lnd-btn lnd-btn-primary" id="lnd-signup-btn">Get Started</button>
-      <button class="lnd-menu-toggle" id="lnd-menu-toggle" aria-label="Menu">&#9776;</button>
-    </div>
-  </div>
-</header>
-
-<!-- HERO -->
-<section class="lnd-hero" id="lnd-home">
-  <div class="lnd-glow-field"></div>
-  <div class="lnd-grid-overlay"></div>
-  <div class="lnd-container lnd-hero-inner">
-    <div>
-      <span class="lnd-eyebrow"><span class="lnd-dot"></span> Now with SpendWise AI insights</span>
-      <h1 class="lnd-hero-title">Track every expense.<br>Spend with <span class="lnd-accent">intention.</span></h1>
-      <p class="lnd-hero-sub">SpendWise brings your spending, budgets, and savings goals into one clear dashboard — with an AI advisor that spots patterns and suggests smarter moves before you overspend.</p>
-      <div class="lnd-hero-cta">
-        <button class="lnd-btn lnd-btn-primary" id="lnd-hero-signup">Create Free Account</button>
-        <a href="#lnd-features" class="lnd-btn lnd-btn-ghost">See How It Works</a>
-      </div>
-      <div class="lnd-trust-row">
-        <span class="lnd-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Bank-level encryption</span>
-        <span class="lnd-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Real-time sync</span>
-        <span class="lnd-trust-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Web &amp; Mobile</span>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ABOUT -->
-<section class="lnd-section" id="lnd-about">
-  <div class="lnd-container">
-    <div class="lnd-section-head">
-      <span class="lnd-pill">About SpendWise</span>
-      <h2 class="lnd-section-title">Built for clarity.<br>Designed for <span class="lnd-accent">control.</span></h2>
-    </div>
-    <div class="lnd-about-grid">
-      <div>
-        <h3 class="lnd-about-h3">Money management that works for you</h3>
-        <p class="lnd-about-p">SpendWise turns scattered receipts and bank exports into a single living picture of your finances. We believe budgeting shouldn't feel like a chore — so every feature is built to be fast, visual, and genuinely useful, from quick expense logging to AI-powered spending advice.</p>
-        <button class="lnd-btn lnd-btn-primary" id="lnd-about-cta">Get Started Free</button>
-      </div>
-      <div class="lnd-pill-grid">
-        <div class="lnd-pill-card"><div class="lnd-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><h4>Smart Tracking</h4><p>Log expenses in seconds and watch them sort themselves into categories.</p></div>
-        <div class="lnd-pill-card"><div class="lnd-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-4.35-4.35M19 11a8 8 0 11-16 0 8 8 0 0116 0z"/></svg></div><h4>Clear Insights</h4><p>Dashboards and charts that show exactly where your money goes.</p></div>
-        <div class="lnd-pill-card"><div class="lnd-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></div><h4>AI Advisor</h4><p>SpendWise AI reviews your habits and suggests smarter choices.</p></div>
-        <div class="lnd-pill-card"><div class="lnd-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div><h4>Secure by Design</h4><p>Your data stays encrypted and private, always.</p></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FEATURES -->
-<section class="lnd-section lnd-section-alt" id="lnd-features">
-  <div class="lnd-container">
-    <div class="lnd-section-head">
-      <span class="lnd-pill">Features</span>
-      <h2 class="lnd-section-title">Everything you need to<br><span class="lnd-accent">spend wisely</span></h2>
-      <p class="lnd-section-sub">From quick logging to long-term planning, SpendWise gives you the tools to stay on top of every dollar.</p>
-    </div>
-    <div class="lnd-service-grid">
-      <div class="lnd-service-card"><div class="lnd-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v8M8 12h8"/><circle cx="12" cy="12" r="10"/></svg></div><h4>Expense Tracking</h4><p>Add, edit, and categorize expenses in seconds with a clean, mobile-friendly interface.</p></div>
-      <div class="lnd-service-card"><div class="lnd-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3"/></svg></div><h4>Budgets &amp; Goals</h4><p>Set monthly budgets per category and track your progress with live visual feedback.</p></div>
-      <div class="lnd-service-card"><div class="lnd-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></div><h4>SpendWise AI</h4><p>Chat with your built-in financial advisor for instant answers about your spending.</p></div>
-      <div class="lnd-service-card"><div class="lnd-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></div><h4>Multi-Device Sync</h4><p>Your data updates instantly across web and mobile, so it's always up to date.</p></div>
-      <div class="lnd-service-card"><div class="lnd-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div><h4>Spending Reports</h4><p>Export clear monthly reports and receipts whenever you need them.</p></div>
-      <div class="lnd-service-card"><div class="lnd-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-9-9c2.5 0 4.8 1 6.4 2.6"/><path d="M21 3v6h-6"/></svg></div><h4>Notifications</h4><p>Get alerts when you're close to a budget limit so surprises don't sneak up on you.</p></div>
-    </div>
-  </div>
-</section>
-
-<!-- TESTIMONIALS -->
-<section class="lnd-section" id="lnd-testimonials">
-  <div class="lnd-container">
-    <div class="lnd-section-head">
-      <span class="lnd-pill">Testimonials</span>
-      <h2 class="lnd-section-title">What our users say</h2>
-    </div>
-    <div class="lnd-testi-grid">
-      <div class="lnd-testi-card"><div class="lnd-testi-avatar">S</div><h5>Sefonias</h5><div class="lnd-role">Freelance Designer</div><div class="lnd-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p>SpendWise helped me finally see where my money was leaking. The AI tips alone saved me real money.</p></div>
-      <div class="lnd-testi-card"><div class="lnd-testi-avatar">K</div><h5>Kaleb</h5><div class="lnd-role">Small Business Owner</div><div class="lnd-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p>Logging expenses takes seconds now. The budget alerts keep my team spending in check every month.</p></div>
-      <div class="lnd-testi-card"><div class="lnd-testi-avatar">R</div><h5>Robel</h5><div class="lnd-role">Graduate Student</div><div class="lnd-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p>Clean, simple, and the dashboard actually makes sense. I check it daily without it feeling like work.</p></div>
-      <div class="lnd-testi-card"><div class="lnd-testi-avatar">E</div><h5>Engda</h5><div class="lnd-role">Software Engineer</div><div class="lnd-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><p>The sync between web and mobile is seamless, and SpendWise AI catches things I'd never notice myself.</p></div>
-    </div>
-  </div>
-</section>
-
-<!-- CTA / CONTACT -->
-<section class="lnd-section" id="lnd-contact">
-  <div class="lnd-container">
-    <div class="lnd-cta-box">
-      <div>
-        <h2 class="lnd-cta-title">Ready to take control<br>of your spending?</h2>
-        <p class="lnd-cta-sub">Join thousands of users tracking smarter with SpendWise. Create your free account and get your first AI insight today.</p>
-        <div class="lnd-stat-row">
-          <div><div class="lnd-stat-num">12k+</div><div class="lnd-stat-label">Active users</div></div>
-          <div><div class="lnd-stat-num">$2.4M</div><div class="lnd-stat-label">Tracked monthly</div></div>
-          <div><div class="lnd-stat-num">4.9&#9733;</div><div class="lnd-stat-label">Average rating</div></div>
-        </div>
-      </div>
-      <form class="lnd-contact-form" id="lnd-contact-form">
-        <input type="text" class="auth-input" placeholder="Your Name">
-        <input type="email" class="auth-input" placeholder="Your Email">
-        <textarea class="auth-input lnd-textarea" placeholder="Tell us what you'd like to track..."></textarea>
-        <button type="submit" class="lnd-btn lnd-btn-primary lnd-btn-block">Send Message</button>
-      </form>
-    </div>
-  </div>
-</section>
-
-<!-- FOOTER -->
-<footer class="lnd-footer">
-  <div class="lnd-container">
-    <div class="lnd-footer-grid">
-      <div class="lnd-footer-brand">
-        <div class="lnd-brand" style="margin-bottom:.75rem">
-          <img src="assets/spendwise-logo.png" alt="SpendWise logo">
-          <span><span class="lnd-sw">Spend</span><span class="lnd-wise">Wise</span></span>
-        </div>
-        <p>SpendWise helps you track expenses, manage budgets, and get AI-powered insights — all in one place.</p>
-        <div class="lnd-social-row">
-          <a href="#" aria-label="Facebook"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></a>
-          <a href="#" aria-label="Instagram"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg></a>
-          <a href="#" aria-label="Twitter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 3a10.9 10.9 0 01-3.14 1.53A4.48 4.48 0 0012 7.5V8a10.66 10.66 0 01-9-4.5s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A6.13 6.13 0 0023 3z"/></svg></a>
-        </div>
-      </div>
-      <div><h5>Quick Links</h5><ul><li><a href="#lnd-home">Home</a></li><li><a href="#lnd-about">About Us</a></li><li><a href="#lnd-features">Features</a></li><li><a href="#lnd-contact">Contact</a></li></ul></div>
-      <div><h5>Contact Us</h5><ul><li><a href="mailto:mab60575@gmail.com">mab60575@gmail.com</a></li></ul></div>
-      <div><h5>Location</h5><ul><li>SpendWise HQ<br>Addis Ababa, Ethiopia</li></ul></div>
-    </div>
-    <div class="lnd-footer-bottom">
-      <span>&copy; 2026 SpendWise. All rights reserved.</span>
-      <span><a href="#">Terms of Service</a><a href="#">Privacy Policy</a></span>
-    </div>
-  </div>
-</footer>
-
-</div>`;
-
-  // Wire up nav buttons — navigate to separate pages instead of opening a modal
-  document.getElementById('lnd-signin-btn').addEventListener('click',()=>navigate('login'));
-  document.getElementById('lnd-signup-btn').addEventListener('click',()=>navigate('signup'));
-  document.getElementById('lnd-hero-signup').addEventListener('click',()=>navigate('signup'));
-  document.getElementById('lnd-about-cta').addEventListener('click',()=>navigate('signup'));
-
-  document.getElementById('lnd-contact-form').addEventListener('submit',e=>{
-    e.preventDefault();
-    alert("Thank you for your message! We'll be in touch soon.");
-    e.target.reset();
-  });
-
-  document.getElementById('lnd-menu-toggle').addEventListener('click',()=>{
-    const links=document.getElementById('lnd-links');
-    const open=links.dataset.open==='1';
-    links.dataset.open=open?'0':'1';
-    Object.assign(links.style,open
-      ?{display:''}
-      :{display:'flex',flexDirection:'column',position:'absolute',top:'100%',left:'0',right:'0',background:'#0a1120',padding:'1rem 1.5rem',borderTop:'1px solid rgba(51,65,85,.5)',zIndex:'99',gap:'1.25rem'});
-  });
-}
-
-
-// ── Input Sanitizers ──────────────────────────────────────────────────────────
-// Strip characters that enable XSS, HTML/script injection, and template attacks.
-// IMPORTANT: passwords are NEVER sanitized — any character is valid in a password.
-
-// For name fields (sign-up, profile): keep letters, spaces, hyphens, apostrophes, dots.
-// Strips: < > { } [ ] \ | ; ` ! # $ % ^ & * + = ~ ? / @ ( )
-function sanitizeName(v) {
-  return v.replace(/[<>{}[\]\\|;`!#$%^&*+=~?/@()]/g, '');
-}
-
-// For free-text fields (notes, item names, categories): only strip the primary
-// HTML injection chars — allow punctuation so users can write naturally.
-function sanitizeText(v) {
-  return v.replace(/[<>{}[\]\\`]/g, '');
-}
-
-// For email fields: strip chars that are never valid in RFC 5321 addresses.
-function sanitizeEmail(v) {
-  return v.replace(/[<>{}[\]\\|;`'"]/g, '');
-}
-
-// Applies sanitizer to an input element, correcting cursor position when chars are stripped.
-function applyInputSanitizer(inp, sanitizer, onChange, onClear) {
-  inp.addEventListener('input', e => {
-    const raw = e.target.value;
-    const clean = sanitizer(raw);
-    if (clean !== raw) {
-      const pos = (inp.selectionStart || 0) - (raw.length - clean.length);
-      inp.value = clean;
-      inp.selectionStart = inp.selectionEnd = Math.max(0, pos);
-    }
-    onChange(clean);
-    if (onClear) onClear();
-  });
-}
-// ─────────────────────────────────────────────────────────────────────────────
-
-function renderLogin(initialTab='signin'){
-  const root=document.getElementById('app-root');root.innerHTML='';
-  history.replaceState(null,'','#/'+(initialTab==='signup'?'signup':'login'));
   const page=el('div',{cls:'auth-page'});
   const wrap=el('div',{style:{width:'100%',maxWidth:'26rem'}});
   // Logo header
   const logoWrap=el('div',{cls:'auth-logo-wrap'});
   logoWrap.appendChild(appLogo('7.5rem',{margin:'0 auto',borderRadius:'1rem',boxShadow:'0 12px 28px rgba(0,0,0,.25)'}));
   const card=el('div',{style:{background:'#1e293b',borderRadius:'1.25rem',padding:'1.5rem',border:'1px solid rgba(51,65,85,.5)',boxShadow:'0 25px 50px -12px rgba(0,0,0,.5)'}});
-  let tab=initialTab==='signup'?'signup':'signin',showPw=false,loading=false,errMsg='';
+  let tab='signin',showPw=false,loading=false,errMsg='';
   let googleRenderId=0;
   let form={name:'',email:'',password:'',confirm:''};
   // Forgot state
@@ -1060,7 +815,7 @@ function renderLogin(initialTab='signin'){
   // Google slot is created ONCE outside render() so it never re-renders and causes layout snap
   const divRow=el('div',{cls:'flex items-center gap-3',style:{margin:'1.25rem 0'}});
   divRow.append(el('div',{style:{flex:1,height:'1px',background:'#334155'}}),el('span',{style:{color:'#64748b',fontSize:'.75rem'}},'or'),el('div',{style:{flex:1,height:'1px',background:'#334155'}}));
-  const gSlot=el('div',{style:{display:'flex',justifyContent:'center',alignItems:'center',minHeight:'44px',transition:'min-height 0s'}});
+  const gSlot=el('div',{style:{display:'flex',justifyContent:'center',minHeight:'44px'}});
   // Initialise Google button immediately (one-time)
   (()=>{
     gSlot.appendChild(el('div',{style:{color:'#64748b',fontSize:'.75rem',padding:'.75rem 0'}},'Loading Google Sign-In...'));
@@ -1094,19 +849,19 @@ function renderLogin(initialTab='signin'){
     if(errMsg){card.appendChild(el('div',{style:{background:'rgba(239,68,68,.15)',border:'1px solid rgba(239,68,68,.3)',borderRadius:'.75rem',padding:'.75rem',fontSize:'.875rem',color:'#fca5a5',marginBottom:'1rem'}},errMsg))}
     const fields=el('div',{cls:'space-y-3'});
     if(tab==='signup'){
-      fields.appendChild(mkAuthField('text','Full Name',form.name,v=>form.name=v,'','100',sanitizeName));
+      fields.appendChild(mkAuthField('text','Full Name',form.name,v=>form.name=v));
     }
-    fields.appendChild(mkAuthField('email','Email Address',form.email,v=>form.email=v,'you@email.com','190',sanitizeEmail));
+    fields.appendChild(mkAuthField('email','Email Address',form.email,v=>form.email=v,'you@email.com'));
     // Password row with toggle
     const pwWrap=el('div');pwWrap.appendChild(el('label',{style:{display:'block',fontSize:'.75rem',color:'#94a3b8',marginBottom:'.25rem',fontWeight:'500'}},'Password'));
     const pwRow=el('div',{cls:'relative'});
-    const pwIn=el('input',{type:showPw?'text':'password',placeholder:'Enter your password',cls:'auth-input pr-10',maxlength:'128'});
+    const pwIn=el('input',{type:showPw?'text':'password',placeholder:'Enter your password',cls:'auth-input pr-10'});
     pwIn.value=form.password;pwIn.addEventListener('input',e=>{form.password=e.target.value;errMsg=''});
     pwIn.addEventListener('keydown',e=>{if(e.key==='Enter')doSubmit()});
     const eyeBtn=el('button',{type:'button',style:{position:'absolute',right:'.75rem',top:'50%',transform:'translateY(-50%)',color:'#64748b',border:'none',background:'none',cursor:'pointer'}});
     eyeBtn.appendChild(ic(showPw?'eye-off':'eye',16));eyeBtn.addEventListener('click',()=>{showPw=!showPw;render()});
     pwRow.append(pwIn,eyeBtn);pwWrap.appendChild(pwRow);fields.appendChild(pwWrap);
-    if(tab==='signup'){fields.appendChild(mkAuthField(showPw?'text':'password','Confirm Password',form.confirm,v=>form.confirm=v,'Confirm your password','128'));}
+    if(tab==='signup'){fields.appendChild(mkAuthField(showPw?'text':'password','Confirm Password',form.confirm,v=>form.confirm=v,'Confirm your password'));}
     const submitBtn=el('button',{cls:'auth-btn',style:{marginTop:'1rem'}},loading?'Please wait...':tab==='signin'?'Sign In':'Create Account');
     submitBtn.disabled=loading;submitBtn.addEventListener('click',doSubmit);fields.appendChild(submitBtn);
     if(tab==='signin'){
@@ -1128,14 +883,10 @@ function renderLogin(initialTab='signin'){
     }
     renderIcons(card);
   }
-  function mkAuthField(type,label,val,onChange,ph='',maxLen='',sanitizer=null){
+  function mkAuthField(type,label,val,onChange,ph=''){
     const wrap=el('div');wrap.appendChild(el('label',{style:{display:'block',fontSize:'.75rem',color:'#94a3b8',marginBottom:'.25rem',fontWeight:'500'}},label));
-    const inp=el('input',{type,placeholder:ph||label,cls:'auth-input'});if(maxLen)inp.setAttribute('maxlength',maxLen);inp.value=val;
-    if(sanitizer){
-      applyInputSanitizer(inp,sanitizer,onChange,()=>{errMsg=''});
-    }else{
-      inp.addEventListener('input',e=>{onChange(e.target.value);errMsg=''});
-    }
+    const inp=el('input',{type,placeholder:ph||label,cls:'auth-input'});inp.value=val;
+    inp.addEventListener('input',e=>{onChange(e.target.value);errMsg=''});
     inp.addEventListener('keydown',e=>{if(e.key==='Enter')doSubmit()});
     wrap.appendChild(inp);return wrap;
   }
@@ -1150,7 +901,7 @@ function renderLogin(initialTab='signin'){
     if(fErr)card.appendChild(el('div',{style:{background:'rgba(239,68,68,.15)',border:'1px solid rgba(239,68,68,.3)',borderRadius:'.75rem',padding:'.75rem',fontSize:'.875rem',color:'#fca5a5',marginBottom:'1rem'}},fErr));
     const body=el('div',{cls:'space-y-3'});
     if(fStep==='send'){
-      const inp=el('input',{type:'email',placeholder:'your@email.com',cls:'auth-input',maxlength:'190'});inp.value=fEmail;applyInputSanitizer(inp,sanitizeEmail,v=>{fEmail=v},null);
+      const inp=el('input',{type:'email',placeholder:'your@email.com',cls:'auth-input'});inp.value=fEmail;inp.addEventListener('input',e=>fEmail=e.target.value);
       const btn=el('button',{cls:'auth-btn'},'Send OTP Code');
       btn.addEventListener('click',async()=>{fErr='';const emailVal=fEmail.trim();if(!emailVal){fErr='Please enter your email address.';renderForgot();return}if(!emailVal.includes('@')){fErr='Invalid email: missing "@" symbol (e.g. you@gmail.com).';renderForgot();return}const atIdx=emailVal.indexOf('@');const domain=emailVal.slice(atIdx+1);if(!domain||!domain.includes('.')||domain.endsWith('.')||domain.startsWith('.')){fErr='Invalid email: domain must include a "." (e.g. you@gmail.com).';renderForgot();return}const emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;if(!emailRe.test(emailVal)){fErr='Please enter a valid email address (e.g. you@gmail.com).';renderForgot();return}try{const otpMeta=await Auth.generateOtp(emailVal);fOtp=otpMeta.message||('We sent a 6-digit code to '+(otpMeta.maskedEmail||emailVal)+'.');fStep='otp';fTimer=60;renderForgot();startForgotTimer()}catch(e){fErr=e.message;renderForgot()}});
       body.append(inp,btn);
@@ -1158,14 +909,14 @@ function renderLogin(initialTab='signin'){
       if(fOtp){body.appendChild(el('div',{style:{background:'rgba(59,130,246,.15)',border:'1px solid rgba(59,130,246,.3)',borderRadius:'.75rem',padding:'.75rem',fontSize:'.875rem',color:'#bfdbfe'}},fOtp))}
       const otpIn=el('input',{type:'text',inputmode:'numeric',maxlength:'6',placeholder:'6-digit code',cls:'auth-input',style:{textAlign:'center',fontSize:'1.25rem',fontFamily:'monospace',letterSpacing:'.1em'}});
       otpIn.value=fOtpInput;otpIn.addEventListener('input',e=>fOtpInput=e.target.value.replace(/\D/g,''));
-      const vBtn=el('button',{cls:'auth-btn'},'Verify Code');vBtn.addEventListener('click',async()=>{fErr='';const trimmed=fOtpInput.trim();if(trimmed===''){fErr='Please enter the code.';renderForgot();return}if(trimmed.length!==6){fErr='Please enter the full 6-digit code.';renderForgot();return}try{await Auth.verifyOtp(fEmail.trim(),trimmed);fStep='newpw';renderForgot()}catch(e){fErr=e.message;renderForgot()}});
+      const vBtn=el('button',{cls:'auth-btn'},'Verify Code');vBtn.addEventListener('click',async()=>{fErr='';try{await Auth.verifyOtp(fEmail.trim(),fOtpInput.trim());fStep='newpw';renderForgot()}catch(e){fErr=e.message;renderForgot()}});
       const resBtn=el('button',{style:{width:'100%',background:'none',border:'none',color:fTimer>0?'#475569':'#0d9488',fontSize:'.875rem',cursor:fTimer>0?'not-allowed':'pointer'}},fTimer>0?'Resend in '+fTimer+'s':'Resend OTP');
       forgotTimerButtons.push(resBtn);syncForgotTimerButtons();
       resBtn.addEventListener('click',async()=>{try{const otpMeta=await Auth.generateOtp(fEmail.trim());fOtp=otpMeta.message||('We sent a 6-digit code to '+(otpMeta.maskedEmail||fEmail.trim())+'.');fTimer=60;renderForgot();startForgotTimer()}catch(e){fErr=e.message;renderForgot()}});
       body.append(otpIn,vBtn,resBtn);
     }else if(fStep==='newpw'){
-      const pw1=el('input',{type:'password',placeholder:'New password (min 8 chars)',cls:'auth-input',maxlength:'128'});pw1.value=fNewPw;pw1.addEventListener('input',e=>fNewPw=e.target.value);
-      const pw2=el('input',{type:'password',placeholder:'Confirm new password',cls:'auth-input',maxlength:'128'});pw2.value=fConfPw;pw2.addEventListener('input',e=>fConfPw=e.target.value);
+      const pw1=el('input',{type:'password',placeholder:'New password (min 8 chars)',cls:'auth-input'});pw1.value=fNewPw;pw1.addEventListener('input',e=>fNewPw=e.target.value);
+      const pw2=el('input',{type:'password',placeholder:'Confirm new password',cls:'auth-input'});pw2.value=fConfPw;pw2.addEventListener('input',e=>fConfPw=e.target.value);
       const btn=el('button',{cls:'auth-btn'},'Set New Password');
       btn.addEventListener('click',async()=>{fErr='';if(fNewPw.length<8){fErr='Minimum 8 characters.';renderForgot();return}if(fNewPw!==fConfPw){fErr='Passwords do not match.';renderForgot();return}try{await Auth.resetPassword(fEmail.trim(),fNewPw);fStep='done';renderForgot()}catch(e){fErr=e.message;renderForgot()}});
       body.append(pw1,pw2,btn);
@@ -1181,8 +932,7 @@ function renderLogin(initialTab='signin'){
     try{
       if(tab==='signin'){
         if(!form.email||!form.password){errMsg='Please fill in all fields.';loading=false;render();return}
-        {const emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;if(!emailRe.test(form.email.trim())){errMsg='Please enter a valid email address (e.g. you@gmail.com).';loading=false;render();return}}
-        await Auth.login(form.email.trim(),form.password);
+        await Auth.login(form.email,form.password);
       }else{
         if(!form.name.trim()){errMsg='Please enter your full name.';loading=false;render();return}
         if(!form.email){errMsg='Please enter your email.';loading=false;render();return}
@@ -1195,15 +945,7 @@ function renderLogin(initialTab='signin'){
     }catch(e){errMsg=e.message;loading=false;render()}
   }
   render();
-  // ── Back to landing ───────────────────────────────────────────────────
-  const backToLanding=el('div',{style:{textAlign:'center',marginBottom:'1rem'}});
-  const backBtn=el('button',{style:{display:'inline-flex',alignItems:'center',gap:'.35rem',color:'#94a3b8',fontSize:'.8rem',background:'none',border:'none',cursor:'pointer',transition:'color .15s'}});
-  backBtn.append(ic('arrow-left',14),' Back to Home');
-  backBtn.addEventListener('mouseenter',()=>{backBtn.style.color='#0d9488'});
-  backBtn.addEventListener('mouseleave',()=>{backBtn.style.color='#94a3b8'});
-  backBtn.addEventListener('click',()=>navigate('landing'));
-  backToLanding.appendChild(backBtn);
-  wrap.append(backToLanding,logoWrap,card);
+  wrap.append(logoWrap,card);
   page.appendChild(wrap);root.appendChild(page);renderIcons(page);
 }
 
@@ -1341,15 +1083,7 @@ function pgExpenses(root){
     const hRight=el('div',{cls:'flex gap-2'});
     if(selected.length>0){const dBtn=el('button',{cls:'btn-danger'});dBtn.append(ic('trash-2',15),' Delete ('+selected.length+')');dBtn.addEventListener('click',()=>{delBulk=true;render()});hRight.appendChild(dBtn)}
     const csvBtn=el('button',{cls:'btn-secondary'});csvBtn.append(ic('download',15),' CSV');
-    csvBtn.addEventListener('click',()=>{
-      // [SEC F-09] CSV-safe field helper: quote all fields, escape inner quotes,
-      // and prefix any value starting with =, +, -, or @ to prevent formula injection in Excel/Sheets.
-      const csvCell=v=>{const s=String(v??'');const safe=/^[=+\-@]/.test(s)?'\t'+s:s;return'"'+safe.replace(/"/g,'""')+'"';};
-      const hd='Date,Category,Amount,Note\n';
-      const r=rows.map(e=>`${csvCell(e.date)},${csvCell(e.category)},${csvCell(e.amount)},${csvCell(e.note||'')}`);
-      const a=el('a',{href:'data:text/csv,'+encodeURIComponent(hd+r.join('\n')),download:'expenses.csv'});
-      document.body.appendChild(a);a.click();a.remove();
-    });
+    csvBtn.addEventListener('click',()=>{const hd='Date,Category,Amount,Note\n';const r=rows.map(e=>`${e.date},${e.category},${e.amount},"${(e.note||'').replace(/"/g,'""')}"`);const a=el('a',{href:'data:text/csv,'+encodeURIComponent(hd+r.join('\n')),download:'expenses.csv'});document.body.appendChild(a);a.click();a.remove()});
     hRight.appendChild(csvBtn);hdr.appendChild(hRight);root.appendChild(hdr);
     // Filter card
     const fCard=el('div',{cls:'card p-3 mb-4'});
@@ -1569,7 +1303,7 @@ function pgBudgets(root){
 // RECURRING
 function pgRecurring(root){
   const today=todayStr();
-  let showAdd=false,errs={},payRecId=null,editRecId=null,delRecId=null,
+  let showAdd=false,errs={},payRecId=null,editRecId=null,
       form={name:'',amount:'',category:getState().categories[0],frequency:'monthly',startDate:today,endDate:''},
       editForm={};
   function render(){
@@ -1604,7 +1338,7 @@ function pgRecurring(root){
       const body=el('div',{style:{padding:'1.25rem'},cls:'space-y-4'});
       // Name field
       const nWrap=el('div');nWrap.appendChild(el('label',{cls:'label'},'Name *'));
-      const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Netflix, Rent'});nIn.value=form.name;applyInputSanitizer(nIn,sanitizeText,v=>{form.name=v},()=>{errs.name=''});nWrap.appendChild(nIn);
+      const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Netflix, Rent'});nIn.value=form.name;nIn.addEventListener('input',e=>{form.name=e.target.value;errs.name=''});nWrap.appendChild(nIn);
       if(errs.name)nWrap.appendChild(el('p',{cls:'text-xs mt-1',style:{color:'#ef4444'}},errs.name));
       body.appendChild(nWrap);
       // Amount field styled like Add Expense
@@ -1663,22 +1397,10 @@ function pgRecurring(root){
         const sk=el('button',{cls:'icon-btn',title:'Skip next due date'});sk.appendChild(ic('skip-forward',14));sk.addEventListener('click',e=>{e.stopPropagation();dispatch({type:'UPDATE_RECURRING',payload:{...r,nextDue:advanceByFrequency(r.nextDue,r.frequency)}})});
         acts.appendChild(sk);
       }
-      const dl=el('button',{cls:'icon-btn danger'});dl.appendChild(ic('trash-2',14));dl.addEventListener('click',e=>{e.stopPropagation();delRecId=r.id;render()});
+      const dl=el('button',{cls:'icon-btn danger'});dl.appendChild(ic('trash-2',14));dl.addEventListener('click',e=>{e.stopPropagation();dispatch({type:'DELETE_RECURRING',payload:r.id})});
       acts.append(ed,dl);rht.appendChild(acts);card.append(iBox,info,rht);list.appendChild(card);
     });
     root.appendChild(list);
-    // Delete confirmation modal
-    if(delRecId){
-      const recToDel=s.recurring.find(r=>r.id===delRecId);
-      const bd=el('div',{cls:'modal-backdrop center'});
-      const box=el('div',{cls:'modal-box anim-scale',style:{maxWidth:'22rem',padding:'1.5rem',borderRadius:'1rem'}});
-      box.append(el('h3',{cls:'font-bold text-lg mb-2',style:{color:s.darkMode?'#fff':'#0f172a'}},'Delete recurring?'),el('p',{cls:'text-sm mb-5',style:{color:'#64748b'}},recToDel?('Remove "'+recToDel.name+'" recurring expense. This cannot be undone.'):'This cannot be undone.'));
-      const btns=el('div',{cls:'flex gap-3'});
-      const cancelBtn=el('button',{cls:'btn-secondary flex-1',style:{justifyContent:'center'}},'Cancel');cancelBtn.addEventListener('click',()=>{delRecId=null;render()});
-      const confirmBtn=el('button',{style:{flex:1,justifyContent:'center',display:'flex',alignItems:'center',background:'#dc2626',color:'#fff',fontWeight:'600',padding:'.5rem 1rem',borderRadius:'.75rem',border:'none',cursor:'pointer'}},'Delete');
-      confirmBtn.addEventListener('click',async()=>{try{await dispatch({type:'DELETE_RECURRING',payload:delRecId});delRecId=null;render()}catch(err){alert(err.message)}});
-      btns.append(cancelBtn,confirmBtn);box.appendChild(btns);bd.appendChild(box);bd.addEventListener('click',e=>{if(e.target===bd){delRecId=null;render()}});root.appendChild(bd);
-    }
     // Pay confirmation modal
     if(payRecId){
       const rec=s.recurring.find(r=>r.id===payRecId);
@@ -1722,7 +1444,7 @@ function pgRecurring(root){
         const body=el('div',{style:{padding:'1.25rem'},cls:'space-y-4'});
         // Name
         const nWrap=el('div');nWrap.appendChild(el('label',{cls:'label'},'Name *'));
-        const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Netflix, Rent'});nIn.value=editForm.name;applyInputSanitizer(nIn,sanitizeText,v=>{editForm.name=v},()=>{errs.name=''});nWrap.appendChild(nIn);
+        const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Netflix, Rent'});nIn.value=editForm.name;nIn.addEventListener('input',e=>{editForm.name=e.target.value;errs.name=''});nWrap.appendChild(nIn);
         if(errs.name)nWrap.appendChild(el('p',{cls:'text-xs mt-1',style:{color:'#ef4444'}},errs.name));
         body.appendChild(nWrap);
         // Amount
@@ -1800,7 +1522,7 @@ function pgBills(root){
       const body=el('div',{style:{padding:'1.25rem'},cls:'space-y-4'});
       // Bill Name
       const nWrap=el('div');nWrap.appendChild(el('label',{cls:'label'},'Bill Name *'));
-      const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Electricity, Internet'});nIn.value=form.name;applyInputSanitizer(nIn,sanitizeText,v=>{form.name=v},()=>{errs.name=''});nWrap.appendChild(nIn);
+      const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Electricity, Internet'});nIn.value=form.name;nIn.addEventListener('input',e=>{form.name=e.target.value;errs.name=''});nWrap.appendChild(nIn);
       if(errs.name)nWrap.appendChild(el('p',{cls:'text-xs mt-1',style:{color:'#ef4444'}},errs.name));
       body.appendChild(nWrap);
       // Amount
@@ -1816,7 +1538,7 @@ function pgBills(root){
       const cWrap=el('div');cWrap.appendChild(el('label',{cls:'label'},'Category'));
       const cSel=el('select',{cls:'input'});BILL_CATS.forEach(c=>{const o=el('option',{value:c},c.charAt(0).toUpperCase()+c.slice(1));if(c===form.category)o.selected=true;cSel.appendChild(o)});
       const otherWrap=el('div',{style:{display:form.category==='other'?'block':'none',marginTop:'.5rem'}});
-      const otherIn=el('input',{cls:'input'+(errs.otherCategory?' error':''),placeholder:'Describe the bill type'});otherIn.value=form.otherCategory||'';applyInputSanitizer(otherIn,sanitizeText,v=>{form.otherCategory=v},()=>{errs.otherCategory=''});
+      const otherIn=el('input',{cls:'input'+(errs.otherCategory?' error':''),placeholder:'Describe the bill type'});otherIn.value=form.otherCategory||'';otherIn.addEventListener('input',e=>{form.otherCategory=e.target.value;errs.otherCategory=''});
       if(errs.otherCategory)otherWrap.appendChild(el('p',{cls:'text-xs mt-1',style:{color:'#ef4444'}},errs.otherCategory));
       otherWrap.appendChild(otherIn);
       cSel.addEventListener('change',e=>{form.category=e.target.value;otherWrap.style.display=form.category==='other'?'block':'none'});
@@ -1901,7 +1623,7 @@ function pgBills(root){
         const body=el('div',{style:{padding:'1.25rem'},cls:'space-y-4'});
         // Name
         const nWrap=el('div');nWrap.appendChild(el('label',{cls:'label'},'Bill Name *'));
-        const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Electricity, Internet'});nIn.value=editForm.name;applyInputSanitizer(nIn,sanitizeText,v=>{editForm.name=v},()=>{errs.name=''});nWrap.appendChild(nIn);
+        const nIn=el('input',{cls:'input'+(errs.name?' error':''),placeholder:'e.g. Electricity, Internet'});nIn.value=editForm.name;nIn.addEventListener('input',e=>{editForm.name=e.target.value;errs.name=''});nWrap.appendChild(nIn);
         if(errs.name)nWrap.appendChild(el('p',{cls:'text-xs mt-1',style:{color:'#ef4444'}},errs.name));
         body.appendChild(nWrap);
         // Amount
@@ -2015,15 +1737,12 @@ function pgReports(root){
     const exportBtn=el('button',{cls:'btn-secondary'});exportBtn.append(ic('download',15),' Export CSV');
     exportBtn.addEventListener('click',()=>{
       const s2=getState();
-      // [SEC F-09] CSV-safe helper: quote every field, escape inner quotes,
-      // and neutralise formula-injection chars (=, +, -, @) with a tab prefix.
-      const csvCell=v=>{const s=String(v??'');const safe=/^[=+\-@]/.test(s)?'\t'+s:s;return'"'+safe.replace(/"/g,'""')+'"';};
       // Build rows from whatever data is in scope
-      const rows=[['Date','Name/Note','Category','Amount','Status','Type'].map(csvCell).join(',')];
-      if(inclExpenses)s2.expenses.filter(e=>{const d=e.date;return(!rangeStart||d>=rangeStart)&&(!rangeEnd||d<=rangeEnd)&&(dateMode!=='month'||d.startsWith(month))}).forEach(e=>rows.push([csvCell(e.date),csvCell(e.note||''),csvCell(e.category),csvCell(e.amount),csvCell('—'),csvCell('Expense')].join(',')));
-      if(inclBills)s2.bills.filter(b=>{const d=b.paidDate||b.dueDate;return d&&(!rangeStart||d>=rangeStart)&&(!rangeEnd||d<=rangeEnd)&&(dateMode!=='month'||d.startsWith(month))}).forEach(b=>rows.push([csvCell(b.paidDate||b.dueDate),csvCell(b.name),csvCell(b.category),csvCell(b.amount),csvCell(b.status),csvCell('Bill')].join(',')));
-      if(inclRecurring)s2.recurring.filter(r=>{const d=r.startDate;return r.active&&(!rangeStart||d>=rangeStart)&&(!rangeEnd||d<=rangeEnd)&&(dateMode!=='month'||d.startsWith(month))}).forEach(r=>rows.push([csvCell(r.startDate),csvCell(r.name),csvCell(r.category),csvCell(r.amount),csvCell('recurring'),csvCell('Recurring')].join(',')));
-      const csv=rows.join('\n');
+      const rows=[['Date','Name/Note','Category','Amount','Status','Type']];
+      if(inclExpenses)s2.expenses.filter(e=>{const d=e.date;return(!rangeStart||d>=rangeStart)&&(!rangeEnd||d<=rangeEnd)&&(dateMode!=='month'||d.startsWith(month))}).forEach(e=>rows.push([e.date,'\"'+(e.note||'').replace(/\"/g,'\"\"')+'\"',e.category,e.amount,'—','Expense']));
+      if(inclBills)s2.bills.filter(b=>{const d=b.paidDate||b.dueDate;return d&&(!rangeStart||d>=rangeStart)&&(!rangeEnd||d<=rangeEnd)&&(dateMode!=='month'||d.startsWith(month))}).forEach(b=>rows.push([b.paidDate||b.dueDate,'\"'+b.name+'\"',b.category,b.amount,b.status,'Bill']));
+      if(inclRecurring)s2.recurring.filter(r=>{const d=r.startDate;return r.active&&(!rangeStart||d>=rangeStart)&&(!rangeEnd||d<=rangeEnd)&&(dateMode!=='month'||d.startsWith(month))}).forEach(r=>rows.push([r.startDate,'\"'+r.name+'\"',r.category,r.amount,'recurring','Recurring']));
+      const csv=rows.map(r=>r.join(',')).join('\n');
       const a=document.createElement('a');a.href='data:text/csv,'+encodeURIComponent(csv);
       a.download='report-'+(dateMode==='month'?month:(rangeStart||'all')+'-to-'+(rangeEnd||'today'))+'.csv';
       document.body.appendChild(a);a.click();a.remove();
@@ -2281,7 +2000,7 @@ function pgProfile(root){
       // Info form card
       const infoCard=el('div',{cls:'card space-y-4 mb-4'});infoCard.appendChild(el('h3',{cls:'font-semibold',style:{color:s.darkMode?'#fff':'#0f172a'}},'Personal Information'));
       const grid=el('div',{cls:'grid g2 gap-4'});
-      const nWrap=el('div');nWrap.append(el('label',{cls:'label'},'Full Name'));const nIn=el('input',{cls:'input',placeholder:'Your name',maxlength:'100'});nIn.value=nameVal;applyInputSanitizer(nIn,sanitizeName,v=>{nameVal=v},null);nWrap.appendChild(nIn);
+      const nWrap=el('div');nWrap.append(el('label',{cls:'label'},'Full Name'));const nIn=el('input',{cls:'input',placeholder:'Your name'});nIn.value=nameVal;nIn.addEventListener('input',e=>{nameVal=e.target.value});nWrap.appendChild(nIn);
       const eWrap=el('div');eWrap.append(el('label',{cls:'label'},'Email'));const eIn=el('input',{type:'email',cls:'input',value:authUser?.email||'',readonly:'',style:{background:s.darkMode?'rgba(51,65,85,.5)':'#f8fafc',color:'#94a3b8',cursor:'not-allowed'}});eWrap.appendChild(eIn);
       const curWrap=el('div');curWrap.append(el('label',{cls:'label'},'Currency'));const cur=el('div',{cls:'input flex items-center gap-2',style:{background:s.darkMode?'rgba(51,65,85,.5)':'#f8fafc',cursor:'not-allowed'}});cur.append(el('span',{cls:'font-semibold'},'ETB'),el('span',{style:{color:'#94a3b8'}},'Ethiopian Birr'));curWrap.appendChild(cur);
       grid.append(nWrap,eWrap,curWrap);infoCard.appendChild(grid);
@@ -2345,7 +2064,9 @@ function pgProfile(root){
       dangerCard.appendChild(clrBtn);root.appendChild(dangerCard);
     }else if(tab==='security'){
       const secCard=el('div',{cls:'card space-y-4'});secCard.append(el('h3',{cls:'font-semibold',style:{color:s.darkMode?'#fff':'#0f172a'}},'Password Reset'),el('p',{cls:'text-sm text-slate-400'},'Reset your password via OTP code sent to your email.'));
-      // Google account notice removed
+      if(authUser?.provider==='google'&&!authUser?.hasPassword){
+        secCard.appendChild(el('div',{style:{background:'rgba(59,130,246,.1)',borderRadius:'.75rem',padding:'1rem'}},el('p',{style:{fontSize:'.875rem',color:'#3b82f6'}},'This Google account can create an app password by OTP while still keeping Google Sign-In.')));
+      }
       if(fErr)secCard.appendChild(el('div',{style:{background:'rgba(239,68,68,.15)',border:'1px solid rgba(239,68,68,.3)',borderRadius:'.75rem',padding:'.75rem',fontSize:'.875rem',color:'#fca5a5'}},fErr));
       if(!showReset){const btn=el('button',{cls:'btn-primary'});btn.append(ic('lock',14),' Reset Password via OTP');btn.addEventListener('click',()=>{showReset=true;fStep='send';fOtp='';fOtpInput='';render()});secCard.appendChild(btn)}
       else if(fStep==='send'){
@@ -2355,7 +2076,7 @@ function pgProfile(root){
         if(fOtp){secCard.appendChild(el('div',{style:{background:'rgba(59,130,246,.15)',border:'1px solid rgba(59,130,246,.3)',borderRadius:'.75rem',padding:'1rem',fontSize:'.875rem',color:'#3b82f6'}},fOtp))}
         const oIn=el('input',{type:'text',inputmode:'numeric',maxlength:'6',cls:'input',placeholder:'6-digit code',style:{textAlign:'center',fontSize:'1.25rem',fontFamily:'monospace',letterSpacing:'.1em'}});oIn.value=fOtpInput;oIn.addEventListener('input',e=>fOtpInput=e.target.value.replace(/\D/g,''));
         const row=el('div',{cls:'flex gap-2'});
-        const vBtn=el('button',{cls:'btn-primary flex-1',style:{justifyContent:'center'}},'Verify Code');vBtn.addEventListener('click',async()=>{fErr='';const trimmed=fOtpInput.trim();if(trimmed===''){fErr='Please enter the code.';render();return}if(trimmed.length!==6){fErr='Please enter the full 6-digit code.';render();return}try{await Auth.verifyOtp(fEmail,trimmed);fStep='newpw';render()}catch(e){fErr=e.message;render()}});
+        const vBtn=el('button',{cls:'btn-primary flex-1',style:{justifyContent:'center'}},'Verify Code');vBtn.addEventListener('click',async()=>{fErr='';try{await Auth.verifyOtp(fEmail,fOtpInput.trim());fStep='newpw';render()}catch(e){fErr=e.message;render()}});
         const rBtn=el('button',{cls:'btn-secondary flex-1',style:{justifyContent:'center'}},fTimer>0?fTimer+'s':'Resend');securityTimerButtons.push(rBtn);syncSecurityTimerButtons();rBtn.addEventListener('click',async()=>{try{const otpMeta=await Auth.generateOtp(fEmail);fOtp=otpMeta.message||('We sent a 6-digit code to '+(otpMeta.maskedEmail||fEmail)+'.');fTimer=60;render();startSecurityTimer()}catch(e){fErr=e.message;render()}});
         row.append(vBtn,rBtn);secCard.append(oIn,row);
       }else if(fStep==='newpw'){
@@ -2416,35 +2137,12 @@ function pgProfile(root){
 function applyTheme(dark){document.documentElement.classList.toggle('dark',!!dark)}
 function renderApp(){
   applyTheme(S.darkMode);
-  if(!Auth.session()){
-    // Not logged in — go to landing unless already on an auth page
-    const h=hashToPage();
-    if(h==='login'||h==='signup'){renderLogin(h);return}
-    history.replaceState(null,'','#/');
-    renderLanding();return;
-  }
-  // Logged in — read the hash, skip auth/landing pages
-  const fromHash=hashToPage();
-  if(APP_PAGES.has(fromHash))PAGE=fromHash;
-  else PAGE='dashboard';
-  if(PAGE==='groups')PAGE='dashboard';
-  const target='#/'+PAGE;
-  if(window.location.hash!==target)history.replaceState(null,'',target);
+  if(!Auth.session()){renderLogin();return}
+  // Mount the AI widget if this is the first render after login
   if(window._swInitAIWidget)window._swInitAIWidget();
+  if(PAGE==='groups')PAGE='dashboard';
   renderLayout();renderPage();
 }
-
-// Handle browser back/forward navigation
-window.addEventListener('popstate',()=>{
-  const page=hashToPage();
-  if(!Auth.session()){
-    if(page==='login'||page==='signup'){renderLogin(page);return}
-    history.replaceState(null,'','#/');renderLanding();return;
-  }
-  if(APP_PAGES.has(page)&&page!==PAGE){
-    PAGE=page;if(page!=='profile')profileTab='account';renderLayout();renderPage();
-  }
-});
 
 sub(newS=>{
   applyTheme(newS.darkMode);
@@ -2672,9 +2370,7 @@ sub(newS=>{
         messages.push({role:'ai',text:data.data.reply,time:nowTime()});
         if(!open){unread++;updateBadge();}
       }else{
-        // Show the actual server error so issues are visible
-        const errMsg=data.error||'Sorry, something went wrong. Please try again.';
-        messages.push({role:'ai',text:errMsg,time:nowTime()});
+        messages.push({role:'ai',text:'Sorry, something went wrong. Please try again.',time:nowTime()});
       }
     }catch(e){
       removeTypingIndicator();
