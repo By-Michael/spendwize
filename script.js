@@ -211,7 +211,12 @@ async function apiRequest(action,payload={}){
   const text=await response.text();
   let parsed={};
   if(text){
-    try{parsed=JSON.parse(text)}catch{throw new Error(text||'Unexpected server response.')}
+    try{parsed=JSON.parse(text)}catch{
+      // Server returned non-JSON (e.g. an HTML error page or hosting-provider interstitial).
+      // Never surface raw HTML to the user — throw a clean, actionable message instead.
+      const isHtml=/^\s*</.test(text);
+      throw new Error(isHtml?'The server returned an unexpected response. Please try again in a moment.':text||'Unexpected server response.');
+    }
   }
   if(!response.ok||parsed.ok===false){
     if(response.status===401)AUTH_SESSION=null;
