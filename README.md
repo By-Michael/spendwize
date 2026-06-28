@@ -197,9 +197,11 @@ Users can switch languages anytime from the **Profile → Settings** page.
 
 ---
 
-## 📄 License
+## License
 
-This project is open source. Feel free to fork and adapt it for your needs.
+Copyright © 2026. All rights reserved.
+
+This project is proprietary and closed-source. Unauthorized copying, modification, distribution, or commercial use of this software, via any medium, is strictly prohibited.
 
 ---
 

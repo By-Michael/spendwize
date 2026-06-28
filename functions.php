@@ -42,7 +42,7 @@ unset($_cfg);
 const SW_SESSION_KEY           = 'spendwise_user';
 const SW_RESET_KEY             = 'spendwise_verified_resets';
 const SW_OTP_EXPIRES_IN        = 300;
-const SW_SMTP_TIMEOUT          = 20;
+const SW_SMTP_TIMEOUT          = 10;
 const SW_GOOGLE_CERTS_URL      = 'https://www.googleapis.com/oauth2/v1/certs';
 const SW_GOOGLE_CERT_CACHE_TTL = 3600;
 
@@ -93,12 +93,11 @@ function sw_normalize_email(string $email): string
 
 function sw_mailer_override_candidates(): array
 {
+    // Only look in the project root — never inside vendor/library directories.
+    // Secrets must never be placed inside PHPMailer's own folder.
     return [
         __DIR__ . '/mailer.local.php',
         __DIR__ . '/mail.local.php',
-        __DIR__ . '/PHPMailer/mailer.local.php',
-        __DIR__ . '/PHPMailer/credentials.php',
-        __DIR__ . '/PHPMailer/config.php',
     ];
 }
 
@@ -244,14 +243,23 @@ function sw_ensure_schema(mysqli $db): void
 
     $db->query(
         'CREATE TABLE IF NOT EXISTS password_reset_codes (
-            user_id INT UNSIGNED NOT NULL PRIMARY KEY,
-            email VARCHAR(190) NOT NULL,
-            code VARCHAR(6) NOT NULL,
-            expires_at DATETIME NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            user_id    INT UNSIGNED NOT NULL PRIMARY KEY,
+            email      VARCHAR(190) NOT NULL,
+            code       VARCHAR(6)   NOT NULL,
+            attempts   TINYINT      NOT NULL DEFAULT 0,
+            expires_at DATETIME     NOT NULL,
+            created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_password_reset_codes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
+
+    // Migration: add attempts column to existing installs created before this column existed
+    if (!sw_column_exists($db, 'password_reset_codes', 'attempts')) {
+        $db->query(
+            'ALTER TABLE password_reset_codes
+             ADD COLUMN attempts TINYINT NOT NULL DEFAULT 0 AFTER code'
+        );
+    }
 
     // ── Phase 1: Relational tables ────────────────────────────────────────────
     // See database.sql for the canonical DDL with full comments.
@@ -1395,6 +1403,7 @@ function sw_send_password_reset_email(string $recipientName, string $recipientEm
 
     try {
         $mail->isSMTP();
+        $mail->SMTPDebug = 0; // Suppress all debug output — it adds overhead and leaks credentials to logs
         $mail->Host = $settings['host'];
         $mail->Port = $settings['port'];
         $mail->SMTPAuth = true;
@@ -1405,20 +1414,23 @@ function sw_send_password_reset_email(string $recipientName, string $recipientEm
 
         if (in_array($settings['secure'], ['ssl', 'smtps'], true)) {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        } else {
+        } elseif (in_array($settings['secure'], ['tls', 'starttls'], true)) {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        } else {
+            // Empty string: no transport encryption (only for local dev/testing)
+            $mail->SMTPSecure = '';
+            $mail->SMTPAutoTLS = false;
         }
 
+        // Build SSL context — always set connect timeout to avoid long TCP hangs on misconfigured servers
+        $sslCtx = ['verify_peer' => true, 'verify_peer_name' => true, 'allow_self_signed' => false];
         if ($caBundle !== null) {
-            $mail->SMTPOptions = [
-                'ssl' => [
-                    'verify_peer' => true,
-                    'verify_peer_name' => true,
-                    'allow_self_signed' => false,
-                    'cafile' => $caBundle,
-                ],
-            ];
+            $sslCtx['cafile'] = $caBundle;
         }
+        $mail->SMTPOptions = [
+            'ssl' => $sslCtx,
+            'socket' => ['bindto' => '0:0'],
+        ];
 
         $mail->setFrom($settings['from_email'], $settings['from_name']);
         $mail->addReplyTo($settings['from_email'], $settings['from_name']);
@@ -1442,7 +1454,8 @@ function sw_send_password_reset_email(string $recipientName, string $recipientEm
             "If you did not request this code, you can ignore this email.";
         $mail->send();
     } catch (MailerException $e) {
-        throw new RuntimeException('Could not send the verification code email. Check your SMTP credentials and mail access.');
+        // Preserve the real PHPMailer error so it reaches error_log at the call site
+        throw new RuntimeException('OTP email failed: ' . $e->getMessage(), 0, $e);
     }
 }
 
@@ -1488,8 +1501,11 @@ function sw_send_notification_email(string $recipientName, string $recipientEmai
 
         if (in_array($settings['secure'], ['ssl', 'smtps'], true)) {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        } else {
+        } elseif (in_array($settings['secure'], ['tls', 'starttls'], true)) {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        } else {
+            $mail->SMTPSecure = '';
+            $mail->SMTPAutoTLS = false;
         }
 
         if ($caBundle !== null) {
@@ -1512,7 +1528,7 @@ function sw_send_notification_email(string $recipientName, string $recipientEmai
         $mail->AltBody = $textBody ?? strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlBody));
         $mail->send();
     } catch (MailerException $e) {
-        throw new RuntimeException('Could not send notification email. Check your SMTP credentials and mail access.');
+        throw new RuntimeException('Notification email failed: ' . $e->getMessage(), 0, $e);
     }
 }
 
@@ -2150,6 +2166,9 @@ function sw_handle_api_request(): never
                 if ($email === '') {
                     sw_error('Enter your email.');
                 }
+                if (strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    sw_error('Please enter a valid email address.');
+                }
 
                 $userRow = sw_find_user_by_email($db, $email);
                 // [SEC F-02] Always return the same generic response regardless of whether
@@ -2157,34 +2176,55 @@ function sw_handle_api_request(): never
                 if ($userRow !== null) {
                     $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
                     $expiresAt = date('Y-m-d H:i:s', time() + SW_OTP_EXPIRES_IN);
-
-                    // [SEC F-07] Reset attempts counter when issuing a new OTP.
-                    $stmt = $db->prepare(
-                        'INSERT INTO password_reset_codes (user_id, email, code, attempts, expires_at)
-                         VALUES (?, ?, ?, 0, ?)
-                         ON DUPLICATE KEY UPDATE email = VALUES(email), code = VALUES(code), attempts = 0, expires_at = VALUES(expires_at), created_at = CURRENT_TIMESTAMP'
-                    );
                     $userId = (int) $userRow['id'];
-                    $stmt->bind_param('isss', $userId, $email, $code, $expiresAt);
-                    $stmt->execute();
-                    $stmt->close();
 
-                    sw_forget_verified_reset($email);
+                    // [BUG FIX] The DB INSERT and the email send must be inside the same
+                    // try-catch.  Previously the INSERT sat outside, so any schema or
+                    // connection error escaped to the outer handler and surfaced as the
+                    // generic "An unexpected error occurred" message.
+                    // The cleanup call sw_delete_password_reset_code() is now also wrapped
+                    // in its own try-catch so that a cleanup failure can never swallow the
+                    // original error.
                     try {
+                        // [SEC F-07] Reset attempts counter when issuing a new OTP.
+                        $stmt = $db->prepare(
+                            'INSERT INTO password_reset_codes (user_id, email, code, attempts, expires_at)
+                             VALUES (?, ?, ?, 0, ?)
+                             ON DUPLICATE KEY UPDATE email = VALUES(email), code = VALUES(code), attempts = 0, expires_at = VALUES(expires_at), created_at = CURRENT_TIMESTAMP'
+                        );
+                        $stmt->bind_param('isss', $userId, $email, $code, $expiresAt);
+                        $stmt->execute();
+                        $stmt->close();
+
+                        sw_forget_verified_reset($email);
                         sw_send_password_reset_email((string) ($userRow['name'] ?? ''), $email, $code, SW_OTP_EXPIRES_IN);
                     } catch (Throwable $e) {
-                        sw_delete_password_reset_code($db, $userId);
-                        error_log('[SpendWise] OTP email error: ' . $e->getMessage());
-                        sw_error('An unexpected error occurred. Please try again.', 500);
+                        // Best-effort cleanup — do not let a cleanup failure hide the real error.
+                        try { sw_delete_password_reset_code($db, $userId); } catch (Throwable $ignored) {}
+                        $cause = $e->getPrevious();
+                        $detail = $e->getMessage() . ($cause ? ' | caused by: ' . $cause->getMessage() : '');
+                        error_log('[SpendWise] OTP send error: ' . $detail . ' in ' . $e->getFile() . ':' . $e->getLine());
+                        // Surface config problems clearly; keep SMTP auth details vague
+                        if (str_contains($e->getMessage(), 'not configured')) {
+                            sw_error('Email sending is not configured on this server. Contact the site administrator.', 500);
+                        }
+                        sw_error('Could not send the verification email. Please try again later.', 500);
                     }
                 }
                 // [SEC F-02] Return same message whether email exists or not (anti-enumeration).
+                // Exception: if the user is already logged in, we know their email exists,
+                // so we can return a direct confirmation instead of the vague message.
+                $isAuthenticated = sw_session_user() !== null;
+                $maskedEmail = sw_mask_email($email);
+                $message = $isAuthenticated
+                    ? 'We sent a 6-digit code to ' . $maskedEmail . '.'
+                    : 'If that email is registered, we sent a 6-digit code.';
                 sw_json_response(200, [
                     'ok' => true,
                     'data' => [
                         'expiresIn' => SW_OTP_EXPIRES_IN,
-                        'maskedEmail' => sw_mask_email($email),
-                        'message' => 'If that email is registered, we sent a 6-digit code.',
+                        'maskedEmail' => $maskedEmail,
+                        'message' => $message,
                     ],
                 ]);
 
@@ -2219,10 +2259,10 @@ function sw_handle_api_request(): never
                 }
                 // [SEC F-07] Reject after 5 failed attempts to prevent brute-force.
                 if ((int) $otpRow['attempts'] >= 5) {
-                    sw_delete_password_reset_code($db, $userId);
+                    try { sw_delete_password_reset_code($db, $userId); } catch (Throwable $ignored) {}
                     sw_error('Too many incorrect attempts. Request a new code.');
                 }
-                if ((string) $otpRow['code'] !== $code) {
+                if (!hash_equals((string) $otpRow['code'], $code)) {
                     // Increment the attempts counter.
                     $stmt = $db->prepare('UPDATE password_reset_codes SET attempts = attempts + 1 WHERE user_id = ?');
                     $stmt->bind_param('i', $userId);
@@ -2261,7 +2301,7 @@ function sw_handle_api_request(): never
                 $stmt->execute();
                 $stmt->close();
 
-                sw_delete_password_reset_code($db, $userId);
+                try { sw_delete_password_reset_code($db, $userId); } catch (Throwable $ignored) {}
                 // [SEC F-08] Invalidate the verified flag immediately after use (one-time guarantee).
                 sw_forget_verified_reset($email);
 

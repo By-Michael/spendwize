@@ -3,7 +3,13 @@
 config.php
 config.production.php
 mailer.local.php
+mail.local.php
 db.local.php
+credentials.php
+# Catch any accidental credential files dropped anywhere in the tree
+**/credentials.php
+**/mailer.local.php
+**/mail.local.php
 
 # Environment files
 .env
