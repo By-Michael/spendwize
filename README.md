@@ -105,7 +105,7 @@ spendwise/
 
 ```bash
 git clone https://github.com/By-Michael/spendwize.git
-cd spendwise
+cd spendwize
 ```
 
 ### 2. Set up the database
