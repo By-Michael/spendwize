@@ -317,4 +317,4 @@ The new API files are purely **additive**. No existing code was modified.
 
 ## Next: Phase 3
 
-Once the frontend is updated to call these endpoints directly, the `save_state` dispatch loop in `script.js` can be removed, cutting network payload by ~90% per mutation.
+Once the frontend is updated to call these endpoints directly, the `save_state` dispatch loop in `script.js` can be removed, cutting network payload by ~90% per mutation
