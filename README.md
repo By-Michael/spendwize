@@ -104,7 +104,7 @@ spendwise/
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/By-Michael/spendwise.git
+git clone https://github.com/By-Michael/spendwize.git
 cd spendwise
 ```
 
