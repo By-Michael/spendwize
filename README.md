@@ -8,6 +8,8 @@ A personal finance web app for tracking expenses, managing budgets, monitoring b
 
 - **Dashboard** — At-a-glance overview of your spending, upcoming bills, budget status, and recurring expenses
 - **Expense Tracking** — Add, edit, delete, and search expenses with categories, dates, notes, and receipt images
+- **OCR Receipt Scanning** — Smart text extraction that scans uploaded receipt images and automatically pre-fills the expense amount, date, merchant, and line items
+- **Financial AI Insights** — Intelligent AI assistant that analyzes spending patterns, provides personalized budgeting advice, and detects unusual expense anomalies
 - **Recurring Expenses** — Set up repeating transactions (daily, weekly, monthly, yearly) with confirm/skip controls
 - **Budget Manager** — Create monthly category budgets with visual progress bars and over-budget alerts
 - **Bills Tracker** — Track utility and subscription bills (electricity, water, internet, TV, etc.) with due-date reminders and overdue detection
