@@ -3,7 +3,7 @@
 A personal finance web app for tracking expenses, managing budgets, monitoring bills, and understanding your spending — built for **Ethiopian Birr (ETB)** users, with full **Amharic (አማርኛ) language support**.
 
 ---
-
+// this is just a test
 ## ✨ Features
 
 - **Dashboard** — At-a-glance overview of your spending, upcoming bills, budget status, and recurring expenses
