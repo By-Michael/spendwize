@@ -246,6 +246,11 @@ Users can switch languages anytime from the **Profile → Settings** page.
 
 ---
 
+## Author
+
+Built by **[Michael](https://github.com/By-Michael)**.
+---
+
 ## License
 
 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — Copyright © 2026 Michael Defaru.
