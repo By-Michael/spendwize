@@ -2,6 +2,7 @@
 
 A personal finance web app for tracking expenses, managing budgets, monitoring bills, and understanding your spending — built for **Ethiopian Birr (ETB)** users, with full **Amharic (አማርኛ) language support**.
 
+**By-[Michael](https://github.com/By-Michael)**
 ---
 
 ## ✨ Features
@@ -247,13 +248,10 @@ Users can switch languages anytime from the **Profile → Settings** page.
 
 ## License
 
-Copyright © 2026 Michael Defaru. All rights reserved.
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — Copyright © 2026 Michael Defaru.
 
-This project is proprietary and closed-source. It is shared publicly strictly for portfolio review and educational evaluation.
+Free to use, modify, and share for any **noncommercial** purpose — personal projects, learning, research, portfolio review, nonprofits, education, and the like. Commercial use requires a separate license from the author. See [`LICENSE`](./LICENSE) for the full terms.
 
-Permissions: Recruiters, hiring managers, and engineers are authorized to view, clone, and test this repository locally for the sole purpose of evaluating my candidacy for employment.
-
-Restrictions: Any other use—including commercial deployment, modification, or unauthorized public distribution—is strictly prohibited.
 
 ---
 
