@@ -454,8 +454,14 @@ html.dark #ai-input:focus{background:#0f172a}
 .lnd-stat-row{display:flex;gap:2rem;flex-wrap:wrap}
 .lnd-stat-num{font-size:1.85rem;font-weight:800;color:#2dd4bf;line-height:1.1}
 .lnd-stat-label{color:#64748b;font-size:.8rem;margin-top:.2rem}
-.lnd-contact-form{display:flex;flex-direction:column;gap:.85rem}
-.lnd-textarea{resize:vertical;min-height:5.5rem;font-family:inherit}
+.lnd-contact-form{display:flex;flex-direction:column;gap:1.1rem}
+.lnd-contact-form .auth-input{padding:.95rem 1.1rem;font-size:1rem;border-radius:.85rem}
+.lnd-textarea{resize:vertical;min-height:8rem;font-family:inherit}
+.lnd-contact-form .lnd-form-msg{font-size:.8rem;border-radius:.6rem;padding:.6rem .8rem;display:none}
+.lnd-contact-form .lnd-form-msg.is-visible{display:block}
+.lnd-contact-form .lnd-form-msg.is-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5}
+.lnd-contact-form .lnd-form-msg.is-success{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:#6ee7b7}
+.lnd-btn:disabled{opacity:.6;cursor:not-allowed}
 
 /* ── Footer ── */
 .lnd-footer{border-top:1px solid rgba(51,65,85,.4);padding:3.75rem 0 1.75rem;background:#080e1c}

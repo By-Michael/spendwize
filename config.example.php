@@ -20,6 +20,7 @@ return [
         'from_email' => '',   // usually same as username
         'from_name'  => 'SpendWise',
     ],
+    'contact_email' => 'm7020322@gmail.com',   // where landing-page "Contact Us" form submissions are delivered
     'google_client_id' => '',   // from Google Cloud Console > APIs & Services > Credentials
     'groq_api_key' => '',       // from console.groq.com/keys — free tier, powers the AI advisor
     'ocrspace_api_key' => '',   // from ocr.space/ocrapi — free tier, powers receipt scanning
