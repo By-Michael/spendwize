@@ -929,10 +929,12 @@ function renderLanding(){
         </div>
       </div>
       <form class="lnd-contact-form" id="lnd-contact-form">
-        <input type="text" class="auth-input" placeholder="Your Name">
-        <input type="email" class="auth-input" placeholder="Your Email">
-        <textarea class="auth-input lnd-textarea" placeholder="Tell us what you'd like to track..."></textarea>
-        <button type="submit" class="lnd-btn lnd-btn-primary lnd-btn-block">Send Message</button>
+        <input type="text" name="name" class="auth-input" placeholder="Your Name" maxlength="100" required>
+        <input type="email" name="email" class="auth-input" placeholder="Your Email" maxlength="190" required>
+        <textarea name="message" class="auth-input lnd-textarea" placeholder="Tell us what you'd like to track..." maxlength="5000" required></textarea>
+        <input type="text" name="website" id="lnd-contact-hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" aria-hidden="true">
+        <div class="lnd-form-msg" id="lnd-contact-msg"></div>
+        <button type="submit" class="lnd-btn lnd-btn-primary lnd-btn-block" id="lnd-contact-submit">Send Message</button>
       </form>
     </div>
   </div>
@@ -973,10 +975,40 @@ function renderLanding(){
   document.getElementById('lnd-hero-signup').addEventListener('click',()=>navigate('signup'));
   document.getElementById('lnd-about-cta').addEventListener('click',()=>navigate('signup'));
 
-  document.getElementById('lnd-contact-form').addEventListener('submit',e=>{
+  document.getElementById('lnd-contact-form').addEventListener('submit',async e=>{
     e.preventDefault();
-    alert("Thank you for your message! We'll be in touch soon.");
-    e.target.reset();
+    const form=e.target;
+    const msgEl=document.getElementById('lnd-contact-msg');
+    const btn=document.getElementById('lnd-contact-submit');
+    const showMsg=(text,isError)=>{
+      msgEl.textContent=text;
+      msgEl.className='lnd-form-msg is-visible '+(isError?'is-error':'is-success');
+    };
+    const name=form.name.value.trim();
+    const email=form.email.value.trim();
+    const message=form.message.value.trim();
+    if(!name||!email||!message){showMsg('Please fill in your name, email, and message.',true);return}
+
+    btn.disabled=true;const origLabel=btn.textContent;btn.textContent='Sending...';
+    msgEl.className='lnd-form-msg';
+    try{
+      const res=await fetch('api/contact.php',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name,email,message,website:form.website.value})
+      });
+      const data=await res.json().catch(()=>null);
+      if(!res.ok||!data||!data.ok){
+        showMsg((data&&data.error)||'Could not send your message. Please try again.',true);
+      }else{
+        showMsg(data.data&&data.data.message||"Thanks! We'll be in touch soon.",false);
+        form.reset();
+      }
+    }catch(err){
+      showMsg('Network error — please check your connection and try again.',true);
+    }finally{
+      btn.disabled=false;btn.textContent=origLabel;
+    }
   });
 
   document.getElementById('lnd-menu-toggle').addEventListener('click',()=>{

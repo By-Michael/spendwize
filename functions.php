@@ -26,6 +26,7 @@ define('SW_DB_USER',  (string) ($_cfg['db']['user'] ?? ''));
 define('SW_DB_PASS',  (string) ($_cfg['db']['pass'] ?? ''));
 define('SW_DB_NAME',  (string) ($_cfg['db']['name'] ?? ''));
 define('SW_GOOGLE_CLIENT_ID', (string) ($_cfg['google_client_id'] ?? ''));
+define('SW_CONTACT_EMAIL', (string) ($_cfg['contact_email'] ?? getenv('SW_CONTACT_EMAIL') ?: ''));
 define('SW_GROQ_API_KEY', (string) ($_cfg['groq_api_key'] ?? getenv('SW_GROQ_API_KEY') ?: ''));
 define('SW_OCRSPACE_API_KEY', (string) ($_cfg['ocrspace_api_key'] ?? getenv('SW_OCRSPACE_API_KEY') ?: ''));
 
@@ -1456,6 +1457,78 @@ function sw_send_password_reset_email(string $recipientName, string $recipientEm
     } catch (MailerException $e) {
         // Preserve the real PHPMailer error so it reaches error_log at the call site
         throw new RuntimeException('OTP email failed: ' . $e->getMessage(), 0, $e);
+    }
+}
+
+function sw_send_contact_message(string $senderName, string $senderEmail, string $message): void
+{
+    if (SW_CONTACT_EMAIL === '') {
+        throw new RuntimeException(
+            'Contact recipient is not configured. Add contact_email to config.php.'
+        );
+    }
+
+    $settings = sw_mailer_settings();
+    $caBundle = sw_ca_bundle_path();
+
+    $mail = new PHPMailer(true);
+
+    try {
+        $mail->isSMTP();
+        $mail->SMTPDebug = 0;
+        $mail->Host = $settings['host'];
+        $mail->Port = $settings['port'];
+        $mail->SMTPAuth = true;
+        $mail->Username = $settings['username'];
+        $mail->Password = $settings['password'];
+        $mail->Timeout = $settings['timeout'];
+        $mail->CharSet = 'UTF-8';
+
+        if (in_array($settings['secure'], ['ssl', 'smtps'], true)) {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } elseif (in_array($settings['secure'], ['tls', 'starttls'], true)) {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        } else {
+            $mail->SMTPSecure = '';
+            $mail->SMTPAutoTLS = false;
+        }
+
+        $sslCtx = ['verify_peer' => true, 'verify_peer_name' => true, 'allow_self_signed' => false];
+        if ($caBundle !== null) {
+            $sslCtx['cafile'] = $caBundle;
+        }
+        $mail->SMTPOptions = [
+            'ssl' => $sslCtx,
+            'socket' => ['bindto' => '0:0'],
+        ];
+
+        // From: the site's own SMTP sender — required, since most providers reject
+        // spoofed From addresses. The visitor's address goes in Reply-To instead,
+        // so replying to the notification email goes straight to them.
+        $mail->setFrom($settings['from_email'], $settings['from_name']);
+        $mail->addReplyTo($senderEmail, $senderName !== '' ? $senderName : $senderEmail);
+        $mail->addAddress(SW_CONTACT_EMAIL);
+        $mail->Subject = 'SpendWise — New contact form message from ' . $senderName;
+        $mail->isHTML(true);
+
+        $safeName = htmlspecialchars($senderName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeEmail = htmlspecialchars($senderEmail, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeMessage = nl2br(htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+
+        $mail->Body =
+            '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a">' .
+            '<p><strong>Name:</strong> ' . $safeName . '</p>' .
+            '<p><strong>Email:</strong> ' . $safeEmail . '</p>' .
+            '<p><strong>Message:</strong></p>' .
+            '<p>' . $safeMessage . '</p>' .
+            '</div>';
+        $mail->AltBody =
+            "Name: {$senderName}\n" .
+            "Email: {$senderEmail}\n\n" .
+            "Message:\n{$message}";
+        $mail->send();
+    } catch (MailerException $e) {
+        throw new RuntimeException('Contact email failed: ' . $e->getMessage(), 0, $e);
     }
 }
 
