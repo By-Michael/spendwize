@@ -191,7 +191,12 @@ const CHART_COLORS=['#0d9488','#f97316','#8b5cf6','#06b6d4','#ec4899','#84cc16',
 const PAGE_SIZE=15;
 
 // â•â•â•â•â•â• AUTH â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-const API_ENDPOINT='functions.php';
+// Set to your deployed API's origin WITH a trailing slash (e.g.
+// 'https://spendwize.infinityfreeapp.com/') when this file is bundled into the
+// Capacitor app (static frontend, no PHP). Leave '' when served directly from
+// InfinityFree alongside the PHP files — relative paths keep working as before.
+const API_BASE=window.__SPENDWISE_API_BASE__||'';
+const API_ENDPOINT=API_BASE+'functions.php';
 const BOOT=window.__SPENDWISE_BOOT__||{};
 const GOOGLE_CONFIG=BOOT.google||{};
 let AUTH_SESSION=BOOT.user||null;
@@ -205,7 +210,7 @@ async function apiRequest(action,payload={}){
   const response=await fetch(API_ENDPOINT+'?action='+encodeURIComponent(action),{
     method:'POST',
     headers:{'Content-Type':'application/json','Accept':'application/json'},
-    credentials:'same-origin',
+    credentials:API_BASE?'include':'same-origin',
     body:JSON.stringify(payload)
   });
   const text=await response.text();
@@ -295,8 +300,8 @@ async function renderGoogleIdentityButton(container){
 
 const Auth={
   session(){return AUTH_SESSION},
-  async login(email,pw){
-    const data=await apiRequest('login',{email,password:pw});
+  async login(email,pw,remember=false){
+    const data=await apiRequest('login',{email,password:pw,remember:!!remember});
     syncSession(data.user??null);syncState(data.state??null);return AUTH_SESSION;
   },
   async signup(name,email,pw){
@@ -643,10 +648,10 @@ function renderExpModal(editExp){
   async function scanReceipt(dataUrl){
     scanning=true;scanError='';scanNotice='';render();
     try{
-      const res=await fetch('receipt.php?action=scan',{
+      const res=await fetch(API_BASE+'receipt.php?action=scan',{
         method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
-        credentials:'same-origin',
+        credentials:API_BASE?'include':'same-origin',
         body:JSON.stringify({image:dataUrl,categories:S.categories||CATEGORIES})
       });
       const data=await res.json();
@@ -992,9 +997,10 @@ function renderLanding(){
     btn.disabled=true;const origLabel=btn.textContent;btn.textContent='Sending...';
     msgEl.className='lnd-form-msg';
     try{
-      const res=await fetch('api/contact.php',{
+      const res=await fetch(API_BASE+'api/contact.php',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
+        credentials:API_BASE?'include':'same-origin',
         body:JSON.stringify({name,email,message,website:form.website.value})
       });
       const data=await res.json().catch(()=>null);
@@ -1068,7 +1074,7 @@ function renderLogin(initialTab='signin'){
   const logoWrap=el('div',{cls:'auth-logo-wrap'});
   logoWrap.appendChild(appLogo('7.5rem',{margin:'0 auto',borderRadius:'1rem',boxShadow:'0 12px 28px rgba(0,0,0,.25)'}));
   const card=el('div',{style:{background:'#1e293b',borderRadius:'1.25rem',padding:'1.5rem',border:'1px solid rgba(51,65,85,.5)',boxShadow:'0 25px 50px -12px rgba(0,0,0,.5)'}});
-  let tab=initialTab==='signup'?'signup':'signin',showPw=false,loading=false,errMsg='';
+  let tab=initialTab==='signup'?'signup':'signin',showPw=false,loading=false,errMsg='',remember=true;
   let googleRenderId=0;
   let form={name:'',email:'',password:'',confirm:''};
   // Forgot state
@@ -1144,6 +1150,13 @@ function renderLogin(initialTab='signin'){
     eyeBtn.appendChild(ic(showPw?'eye-off':'eye',16));eyeBtn.addEventListener('click',()=>{showPw=!showPw;render()});
     pwRow.append(pwIn,eyeBtn);pwWrap.appendChild(pwRow);fields.appendChild(pwWrap);
     if(tab==='signup'){fields.appendChild(mkAuthField(showPw?'text':'password','Confirm Password',form.confirm,v=>form.confirm=v,'Confirm your password','128'));}
+    if(tab==='signin'){
+      const rmRow=el('label',{style:{display:'flex',alignItems:'center',gap:'.5rem',fontSize:'.8125rem',color:'#94a3b8',cursor:'pointer',userSelect:'none',marginTop:'.25rem'}});
+      const rmBox=el('input',{type:'checkbox'});rmBox.checked=remember;
+      rmBox.addEventListener('change',e=>{remember=e.target.checked});
+      rmRow.append(rmBox,'Remember me');
+      fields.appendChild(rmRow);
+    }
     const submitBtn=el('button',{cls:'auth-btn',style:{marginTop:'1rem'}},loading?'Please wait...':tab==='signin'?'Sign In':'Create Account');
     submitBtn.disabled=loading;submitBtn.addEventListener('click',doSubmit);fields.appendChild(submitBtn);
     if(tab==='signin'){
@@ -1219,7 +1232,7 @@ function renderLogin(initialTab='signin'){
       if(tab==='signin'){
         if(!form.email||!form.password){errMsg='Please fill in all fields.';loading=false;render();return}
         {const emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;if(!emailRe.test(form.email.trim())){errMsg='Please enter a valid email address (e.g. you@gmail.com).';loading=false;render();return}}
-        await Auth.login(form.email.trim(),form.password);
+        await Auth.login(form.email.trim(),form.password,remember);
       }else{
         if(!form.name.trim()){errMsg='Please enter your full name.';loading=false;render();return}
         if(!form.email){errMsg='Please enter your email.';loading=false;render();return}
@@ -2699,9 +2712,10 @@ sub(newS=>{
     setStatus('Thinking…');
 
     try{
-      const res=await fetch('ai.php?action=chat',{
+      const res=await fetch(API_BASE+'ai.php?action=chat',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
+        credentials:API_BASE?'include':'same-origin',
         body:JSON.stringify({message:text}),
       });
       const data=await res.json();
@@ -2730,7 +2744,7 @@ sub(newS=>{
   async function clearChat(){
     messages.length=0;
     renderMessages();
-    try{await fetch('ai.php?action=clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}
+    try{await fetch(API_BASE+'ai.php?action=clear',{method:'POST',headers:{'Content-Type':'application/json'},credentials:API_BASE?'include':'same-origin',body:'{}'});}
     catch(e){}
   }
 

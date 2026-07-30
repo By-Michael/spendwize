@@ -195,7 +195,7 @@ const PAGE_SIZE=15;
 // 'https://spendwize.infinityfreeapp.com/') when this file is bundled into the
 // Capacitor app (static frontend, no PHP). Leave '' when served directly from
 // InfinityFree alongside the PHP files — relative paths keep working as before.
-const API_BASE=window.__SPENDWISE_API_BASE__||'https://spendwize.infinityfreeapp.com/';
+const API_BASE=window.__SPENDWISE_API_BASE__||'';
 const API_ENDPOINT=API_BASE+'functions.php';
 const BOOT=window.__SPENDWISE_BOOT__||{};
 const GOOGLE_CONFIG=BOOT.google||{};
@@ -300,8 +300,8 @@ async function renderGoogleIdentityButton(container){
 
 const Auth={
   session(){return AUTH_SESSION},
-  async login(email,pw){
-    const data=await apiRequest('login',{email,password:pw});
+  async login(email,pw,remember=false){
+    const data=await apiRequest('login',{email,password:pw,remember:!!remember});
     syncSession(data.user??null);syncState(data.state??null);return AUTH_SESSION;
   },
   async signup(name,email,pw){
@@ -1074,7 +1074,7 @@ function renderLogin(initialTab='signin'){
   const logoWrap=el('div',{cls:'auth-logo-wrap'});
   logoWrap.appendChild(appLogo('7.5rem',{margin:'0 auto',borderRadius:'1rem',boxShadow:'0 12px 28px rgba(0,0,0,.25)'}));
   const card=el('div',{style:{background:'#1e293b',borderRadius:'1.25rem',padding:'1.5rem',border:'1px solid rgba(51,65,85,.5)',boxShadow:'0 25px 50px -12px rgba(0,0,0,.5)'}});
-  let tab=initialTab==='signup'?'signup':'signin',showPw=false,loading=false,errMsg='';
+  let tab=initialTab==='signup'?'signup':'signin',showPw=false,loading=false,errMsg='',remember=true;
   let googleRenderId=0;
   let form={name:'',email:'',password:'',confirm:''};
   // Forgot state
@@ -1150,6 +1150,13 @@ function renderLogin(initialTab='signin'){
     eyeBtn.appendChild(ic(showPw?'eye-off':'eye',16));eyeBtn.addEventListener('click',()=>{showPw=!showPw;render()});
     pwRow.append(pwIn,eyeBtn);pwWrap.appendChild(pwRow);fields.appendChild(pwWrap);
     if(tab==='signup'){fields.appendChild(mkAuthField(showPw?'text':'password','Confirm Password',form.confirm,v=>form.confirm=v,'Confirm your password','128'));}
+    if(tab==='signin'){
+      const rmRow=el('label',{style:{display:'flex',alignItems:'center',gap:'.5rem',fontSize:'.8125rem',color:'#94a3b8',cursor:'pointer',userSelect:'none',marginTop:'.25rem'}});
+      const rmBox=el('input',{type:'checkbox'});rmBox.checked=remember;
+      rmBox.addEventListener('change',e=>{remember=e.target.checked});
+      rmRow.append(rmBox,'Remember me');
+      fields.appendChild(rmRow);
+    }
     const submitBtn=el('button',{cls:'auth-btn',style:{marginTop:'1rem'}},loading?'Please wait...':tab==='signin'?'Sign In':'Create Account');
     submitBtn.disabled=loading;submitBtn.addEventListener('click',doSubmit);fields.appendChild(submitBtn);
     if(tab==='signin'){
@@ -1225,7 +1232,7 @@ function renderLogin(initialTab='signin'){
       if(tab==='signin'){
         if(!form.email||!form.password){errMsg='Please fill in all fields.';loading=false;render();return}
         {const emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;if(!emailRe.test(form.email.trim())){errMsg='Please enter a valid email address (e.g. you@gmail.com).';loading=false;render();return}}
-        await Auth.login(form.email.trim(),form.password);
+        await Auth.login(form.email.trim(),form.password,remember);
       }else{
         if(!form.name.trim()){errMsg='Please enter your full name.';loading=false;render();return}
         if(!form.email){errMsg='Please enter your email.';loading=false;render();return}

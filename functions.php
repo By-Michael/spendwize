@@ -51,6 +51,8 @@ const SW_OTP_EXPIRES_IN        = 300;
 const SW_SMTP_TIMEOUT          = 10;
 const SW_GOOGLE_CERTS_URL      = 'https://www.googleapis.com/oauth2/v1/certs';
 const SW_GOOGLE_CERT_CACHE_TTL = 3600;
+const SW_SESSION_LIFETIME_DEFAULT  = 86400;          // 24 hours — normal login
+const SW_SESSION_LIFETIME_REMEMBER = 60 * 60 * 24 * 30; // 30 days — "Remember me"
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     // [SEC F-11] Harden session cookie before starting the session.
@@ -65,8 +67,29 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_secure', '1');
     ini_set('session.cookie_samesite', 'None');
-    ini_set('session.cookie_lifetime', '86400'); // 24-hour session lifetime
+    ini_set('session.cookie_lifetime', (string) SW_SESSION_LIFETIME_DEFAULT);
+    // Keep session data on the server at least as long as the longest cookie
+    // we might issue ("Remember me"), or a 30-day-old cookie would point at
+    // an already garbage-collected session.
+    ini_set('session.gc_maxlifetime', (string) SW_SESSION_LIFETIME_REMEMBER);
     session_start();
+}
+
+/**
+ * Re-issue the session cookie with a longer (or the normal) expiry.
+ * Call this right after login/signup/google_login, once the session id is
+ * finalized (i.e. after session_regenerate_id()).
+ */
+function sw_apply_remember_cookie(bool $remember): void
+{
+    $lifetime = $remember ? SW_SESSION_LIFETIME_REMEMBER : SW_SESSION_LIFETIME_DEFAULT;
+    setcookie(session_name(), session_id(), [
+        'expires'  => time() + $lifetime,
+        'path'     => '/',
+        'secure'   => true,
+        'httponly' => true,
+        'samesite' => 'None',
+    ]);
 }
 
 /**
@@ -2180,6 +2203,7 @@ function sw_handle_api_request(): never
             case 'login':
                 $email = sw_normalize_email((string) ($input['email'] ?? ''));
                 $password = (string) ($input['password'] ?? '');
+                $remember = (bool) ($input['remember'] ?? false);
 
                 if ($email === '' || $password === '') {
                     sw_error('Please fill in all fields.');
@@ -2205,6 +2229,7 @@ function sw_handle_api_request(): never
                 $user = sw_user_payload($userRow);
                 sw_store_session($user);
                 session_regenerate_id(true); // [SEC F-11] prevent session fixation
+                sw_apply_remember_cookie($remember);
 
                 sw_json_response(200, [
                     'ok' => true,
@@ -2216,6 +2241,7 @@ function sw_handle_api_request(): never
 
             case 'google_login':
                 $credential = trim((string) ($input['credential'] ?? ''));
+                $remember = (bool) ($input['remember'] ?? true); // Google sign-in defaults to remembered
                 if ($credential === '') {
                     sw_error('Missing Google credential.');
                 }
@@ -2225,6 +2251,7 @@ function sw_handle_api_request(): never
                 $user = sw_user_payload($userRow);
                 sw_store_session($user);
                 session_regenerate_id(true); // [SEC F-11] prevent session fixation
+                sw_apply_remember_cookie($remember);
 
                 sw_json_response(200, [
                     'ok' => true,
@@ -2277,6 +2304,7 @@ function sw_handle_api_request(): never
                 $user = sw_user_payload($userRow);
                 sw_store_session($user);
                 session_regenerate_id(true); // [SEC F-11] prevent session fixation
+                sw_apply_remember_cookie(true); // new signups start remembered
 
                 sw_json_response(200, [
                     'ok' => true,
