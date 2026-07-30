@@ -2,7 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/functions.php';
-// 
+sw_send_cors_headers();
+//
 // ── Groq config ──────────────────────────────────────────────────────────────
 // SW_GROQ_API_KEY is defined in functions.php (read from config.php / config.production.php)
 // llama-3.3-70b-versatile has a 128k context window — large enough for full financial history

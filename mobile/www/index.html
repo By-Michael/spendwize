@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SpendWise</title>
+<link rel="icon" type="image/png" href="assets/spendwise-logo.png">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lucide@0.383.0/dist/umd/lucide.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app-root"></div>
+<div id="expense-modal-root"></div>
+<div id="modal-root"></div>
+<script>
+// Absolute URL (with trailing slash) of your deployed InfinityFree API.
+// Change this if you move hosts — everything else in script.js reads from it.
+window.__SPENDWISE_API_BASE__ = "https://spendwize.infinityfreeapp.com/";
+
+// There's no PHP here to inject the session/state server-side like index.php
+// did, so restore it (if the session cookie is still valid) by calling the
+// 'bootstrap' action before script.js runs its own renderApp().
+window.__SPENDWISE_BOOT_READY__ = fetch(
+  window.__SPENDWISE_API_BASE__ + "functions.php?action=bootstrap",
+  { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: "{}" }
+)
+  .then(function (r) { return r.json(); })
+  .then(function (r) { window.__SPENDWISE_BOOT__ = (r && r.ok && r.data) ? r.data : { user: null, state: null }; })
+  .catch(function () { window.__SPENDWISE_BOOT__ = { user: null, state: null }; });
+</script>
+<script src="i18n/am.js" charset="UTF-8"></script>
+<script src="i18n/extra.js" charset="UTF-8"></script>
+<script>
+// script.js calls renderApp() itself at the bottom on load; wait for the
+// session-restore fetch above to finish first so AUTH_SESSION is accurate.
+window.__SPENDWISE_BOOT_READY__.finally(function () {
+  var s = document.createElement("script");
+  s.src = "script.js";
+  document.body.appendChild(s);
+});
+</script>
+</body>
+</html>

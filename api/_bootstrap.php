@@ -26,28 +26,10 @@ require_once $_swRoot . '/functions.php';
 unset($_swRoot);
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-// [SEC F-01] Restrict CORS to the production domain only.
-// Replace SW_APP_ORIGIN in config.php with your exact production URL, e.g.:
-//   define('SW_APP_ORIGIN', 'https://yourdomain.com');
+// [SEC F-01] Restrict CORS to an allow-list of exact origins.
+// Set app_origins in config.production.php — see functions.php / sw_send_cors_headers().
 // Never use '*' when session cookies are involved — that enables CSRF from any site.
-$allowedOrigin = defined('SW_APP_ORIGIN') ? SW_APP_ORIGIN : '';
-$requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if ($allowedOrigin !== '' && $requestOrigin === $allowedOrigin) {
-    header('Access-Control-Allow-Origin: ' . $allowedOrigin);
-    header('Access-Control-Allow-Credentials: true');
-} elseif ($allowedOrigin === '') {
-    // Fallback for local dev when SW_APP_ORIGIN is not set — restrict to same origin
-    header('Access-Control-Allow-Origin: ' . ($requestOrigin ?: 'null'));
-    header('Access-Control-Allow-Credentials: true');
-}
-header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
-header('Access-Control-Max-Age: 86400');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
+sw_send_cors_headers();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

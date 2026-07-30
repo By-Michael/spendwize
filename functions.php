@@ -26,6 +26,11 @@ define('SW_DB_USER',  (string) ($_cfg['db']['user'] ?? ''));
 define('SW_DB_PASS',  (string) ($_cfg['db']['pass'] ?? ''));
 define('SW_DB_NAME',  (string) ($_cfg['db']['name'] ?? ''));
 define('SW_GOOGLE_CLIENT_ID', (string) ($_cfg['google_client_id'] ?? ''));
+define('SW_APP_ORIGINS', array_values(array_filter((array) ($_cfg['app_origins'] ?? []))));
+// Back-compat: api/_bootstrap.php still checks the older single-origin SW_APP_ORIGIN.
+if (!empty($_cfg['app_origins'][0]) && !defined('SW_APP_ORIGIN')) {
+    define('SW_APP_ORIGIN', (string) $_cfg['app_origins'][0]);
+}
 define('SW_CONTACT_EMAIL', (string) ($_cfg['contact_email'] ?? getenv('SW_CONTACT_EMAIL') ?: ''));
 define('SW_GROQ_API_KEY', (string) ($_cfg['groq_api_key'] ?? getenv('SW_GROQ_API_KEY') ?: ''));
 define('SW_OCRSPACE_API_KEY', (string) ($_cfg['ocrspace_api_key'] ?? getenv('SW_OCRSPACE_API_KEY') ?: ''));
@@ -51,12 +56,62 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     // [SEC F-11] Harden session cookie before starting the session.
     // HttpOnly: blocks JS from reading the cookie (mitigates XSS-based session theft).
     // Secure:   only transmit cookie over HTTPS.
-    // SameSite: prevents the cookie from being sent on cross-site requests (mitigates CSRF).
+    // SameSite: the app is now consumed cross-origin by a Capacitor-wrapped mobile
+    //   client (origin https://localhost / capacitor://localhost), so the cookie
+    //   MUST be SameSite=None to be sent on those requests at all. None requires
+    //   Secure=1, which is already set. CSRF risk is mitigated instead by the
+    //   strict CORS origin allow-list in sw_send_cors_headers() below — a
+    //   cross-site page can't get a matching Origin, so it can't ride the cookie.
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_secure', '1');
-    ini_set('session.cookie_samesite', 'Strict');
+    ini_set('session.cookie_samesite', 'None');
     ini_set('session.cookie_lifetime', '86400'); // 24-hour session lifetime
     session_start();
+}
+
+/**
+ * Shared CORS handling for every entry point (functions.php legacy API,
+ * ai.php, receipt.php, and api/_bootstrap.php).
+ *
+ * Define SW_APP_ORIGINS in config.php / config.production.php as an array of
+ * exact allowed origins, e.g.:
+ *   'app_origins' => [
+ *       'https://yourdomain.com',        // the website itself
+ *       'https://localhost',             // Capacitor on Android (default androidScheme)
+ *       'capacitor://localhost',         // Capacitor on iOS / older Android configs
+ *   ],
+ * Never combine Access-Control-Allow-Credentials with a wildcard '*' origin.
+ */
+function sw_send_cors_headers(): void
+{
+    static $sent = false;
+    if ($sent) {
+        return;
+    }
+    $sent = true;
+
+    $allowed = defined('SW_APP_ORIGINS') ? SW_APP_ORIGINS : [];
+    $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+    if ($requestOrigin !== '' && in_array($requestOrigin, $allowed, true)) {
+        header('Access-Control-Allow-Origin: ' . $requestOrigin);
+        header('Access-Control-Allow-Credentials: true');
+    } elseif (empty($allowed)) {
+        // No allow-list configured yet (e.g. fresh local dev) — fall back to
+        // reflecting the request origin so things work out of the box.
+        // Set SW_APP_ORIGINS in config.production.php before shipping.
+        header('Access-Control-Allow-Origin: ' . ($requestOrigin ?: 'null'));
+        header('Access-Control-Allow-Credentials: true');
+    }
+    header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
+    header('Access-Control-Max-Age: 86400');
+    header('Vary: Origin');
+
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+        http_response_code(204);
+        exit;
+    }
 }
 
 function sw_json_response(int $status, array $payload): never
@@ -2111,6 +2166,7 @@ function sw_forget_verified_reset(string $email): void
 
 function sw_handle_api_request(): never
 {
+    sw_send_cors_headers();
     try {
         $action = trim((string) ($_GET['action'] ?? ''));
         if ($action === '') {
@@ -2448,6 +2504,12 @@ function sw_handle_api_request(): never
 
                 sw_save_state($db, (int) $sessionUser['id'], $state);
                 sw_json_response(200, ['ok' => true, 'data' => ['saved' => true]]);
+
+            case 'bootstrap':
+                // For the static/Capacitor frontend: restores an existing cookie
+                // session's user + state, same payload sw_get_bootstrap_payload()
+                // used to inject server-side into index.php.
+                sw_json_response(200, ['ok' => true, 'data' => sw_get_bootstrap_payload()]);
 
             case 'clear_state':
                 $sessionUser = sw_require_session_user();

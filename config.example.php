@@ -20,6 +20,13 @@ return [
         'from_email' => '',   // usually same as username
         'from_name'  => 'SpendWise',
     ],
+    // Exact origins allowed to call this API with cookies/credentials.
+    // Include your website AND your Capacitor app's WebView origin.
+    'app_origins' => [
+        'https://spendwize.infinityfreeapp.com', // your website itself
+        'https://localhost',                     // Capacitor Android default (server.androidScheme: 'https')
+        'capacitor://localhost',                 // Capacitor iOS / legacy Android
+    ],
     'contact_email' => '',   // where landing-page "Contact Us" form submissions are delivered
     'google_client_id' => '',   // from Google Cloud Console > APIs & Services > Credentials
     'groq_api_key' => '',       // from console.groq.com/keys — free tier, powers the AI advisor

@@ -33,3 +33,14 @@ Thumbs.db
 xlsx_extract/
 translations.zip
 excel_preview.txt
+
+# ── Mobile / Capacitor ───────────────────────────────────────────────────────
+# Generated native projects and build output — regenerate with `npx cap add`.
+mobile/android/
+mobile/ios/
+mobile/node_modules/
+mobile/dist/
+mobile/build/
+*.apk
+*.aab
+*.ipa

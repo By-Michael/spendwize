@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/functions.php';
+sw_send_cors_headers();
 
 // ── OCR.space config ──────────────────────────────────────────────────────
 define('SW_OCRSPACE_URL', 'https://api.ocr.space/parse/image');

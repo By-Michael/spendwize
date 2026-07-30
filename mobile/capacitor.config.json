@@ -1,0 +1,8 @@
+{
+  "appId": "com.spendwise.app",
+  "appName": "SpendWise",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
