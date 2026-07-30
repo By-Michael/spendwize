@@ -246,7 +246,14 @@ function applySessionToState(state){
 }
 function syncState(state){S=applySessionToState(mergeState(state));document.documentElement.classList.toggle('dark',S.darkMode);return S}
 
-function googleEnabled(){return !!(GOOGLE_CONFIG.enabled&&GOOGLE_CONFIG.clientId)}
+function googleEnabled(){
+  // Google's Identity Services JS SDK is blocked by Google inside embedded
+  // WebViews (Capacitor/Cordova) — it shows a "disallowed_useragent" error
+  // instead of completing sign-in. Hide the button here rather than show a
+  // broken flow; re-enable once native Google Sign-In is wired up.
+  if(window.__SPENDWISE_IS_APP__)return false;
+  return !!(GOOGLE_CONFIG.enabled&&GOOGLE_CONFIG.clientId);
+}
 function googleClientId(){return GOOGLE_CONFIG.clientId||''}
 function setGoogleCredentialHandler(handler){GOOGLE_CALLBACK=handler}
 function loadGoogleIdentityApi(){
@@ -2472,6 +2479,10 @@ function renderApp(){
     // Not logged in — go to landing unless already on an auth page
     const h=hashToPage();
     if(h==='login'||h==='signup'){renderLogin(h);return}
+    if(window.__SPENDWISE_IS_APP__){
+      // Mobile app build: no landing/marketing page, go straight to sign in.
+      history.replaceState(null,'','#/login');renderLogin('signin');return;
+    }
     history.replaceState(null,'','#/');
     renderLanding();return;
   }
@@ -2491,6 +2502,7 @@ window.addEventListener('popstate',()=>{
   const page=hashToPage();
   if(!Auth.session()){
     if(page==='login'||page==='signup'){renderLogin(page);return}
+    if(window.__SPENDWISE_IS_APP__){history.replaceState(null,'','#/login');renderLogin('signin');return}
     history.replaceState(null,'','#/');renderLanding();return;
   }
   if(APP_PAGES.has(page)&&page!==PAGE){

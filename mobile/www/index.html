@@ -15,6 +15,10 @@
 <div id="expense-modal-root"></div>
 <div id="modal-root"></div>
 <script>
+// This build runs inside the Capacitor app — skip the marketing landing
+// page and go straight to sign in/sign up (script.js checks this flag).
+window.__SPENDWISE_IS_APP__ = true;
+
 // Absolute URL (with trailing slash) of your deployed InfinityFree API.
 // Change this if you move hosts — everything else in script.js reads from it.
 window.__SPENDWISE_API_BASE__ = "https://spendwize.infinityfreeapp.com/";
